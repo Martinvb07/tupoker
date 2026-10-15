@@ -35,6 +35,8 @@ const settingsSchema = {
   minBet: { type: Number, default: 100 },
   maxBet: { type: Number, default: 0 }, // 0 = sin límite
   startingChips: { type: Number, default: 10000 },
+  mode: { type: String, enum: ['live', 'random', 'offline'], default: 'live' },
+  chips: { type: [Number], default: [] }, // denominaciones elegidas por el dealer (vacío = automáticas)
 };
 
 const groupSchema = new Schema(

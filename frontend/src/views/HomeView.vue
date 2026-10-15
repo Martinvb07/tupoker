@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { auth, toast } from '@/lib/store.js';
-import { formatChips } from '@/lib/format.js';
+import { formatChips, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import StatTiles from '@/components/StatTiles.vue';
@@ -77,7 +77,11 @@ function join() {
               <span v-if="t.group" class="gemoji" :style="{ background: t.group.color + '33' }">{{ t.group.emoji }}</span>
               <div class="grow">
                 <h3 class="ellipsis">{{ t.name }}</h3>
-                <div class="small muted">Ciegas {{ formatChips(Math.max(1, Math.floor(t.settings.minBet / 2))) }}/{{ formatChips(t.settings.minBet) }} · {{ t.players }} jugadores</div>
+                <div class="small muted">
+                  {{ modeInfo(t.settings.mode).icon }} {{ modeInfo(t.settings.mode).short }}
+                  <template v-if="t.settings.mode !== 'offline'">· Ciegas {{ formatChips(Math.max(1, Math.floor(t.settings.minBet / 2))) }}/{{ formatChips(t.settings.minBet) }}</template>
+                  · {{ t.players }} jugadores
+                </div>
               </div>
             </div>
             <span class="badge" :class="t.status === 'playing' ? 'badge-green' : 'badge-gold'">

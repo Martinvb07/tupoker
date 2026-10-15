@@ -90,3 +90,61 @@ test('la apuesta máxima limita las subidas', () => {
   e.act(t, t.hand.toAct, 'raise', 120);
   assert.equal(t.hand.currentBet, 120);
 });
+
+test('modo aleatorio: la app reparte cartas y board y resuelve sola', () => {
+  const t = mesa(3);
+  t.settings.mode = 'random';
+  e.startHand(t);
+  const all = t.hand.players.flatMap((p) => p.cards);
+  assert.equal(new Set(all).size, 6);
+  assert.throws(() => e.setHoleCards(t, 'p0', ['As', 'Ks']), /aleatorio/);
+  e.act(t, t.hand.toAct, 'call');
+  e.act(t, t.hand.toAct, 'call');
+  e.act(t, t.hand.toAct, 'check');
+  assert.equal(t.hand.board.length, 3);
+  assert.equal(t.hand.awaiting, null);
+  assert.throws(() => e.setBoard(t, ['2c']));
+  for (let i = 0; i < 9 && t.hand.stage !== 'done'; i++) e.act(t, t.hand.toAct, 'check');
+  assert.equal(t.hand.stage, 'done');
+  assert.equal(t.hand.board.length, 5);
+  assert.equal(total(t), 3000);
+  assert.equal(t.hand.deck, undefined);
+});
+
+test('modo aleatorio: all-in preflop reparte todo el board', () => {
+  const t = mesa(2);
+  t.settings.mode = 'random';
+  e.startHand(t);
+  e.act(t, t.hand.toAct, 'allin');
+  e.act(t, t.hand.toAct, 'call');
+  assert.equal(t.hand.stage, 'done');
+  assert.equal(t.hand.board.length, 5);
+  assert.equal(total(t), 2000);
+});
+
+test('modo sin dinero: sin apuestas, el dealer pone cartas y elige ganador', () => {
+  const t = mesa(3, [0, 0, 0]);
+  t.settings.mode = 'offline';
+  e.startHand(t);
+  assert.equal(t.hand.awaiting, 'flop');
+  assert.throws(() => e.act(t, 'p0', 'check'), /sin dinero/);
+  e.setHoleCards(t, 'p0', ['Ah', 'Ad']);
+  e.setHoleCards(t, 'p1', ['Kh', 'Kd']);
+  e.setBoard(t, ['As', '7d', '2c']);
+  assert.equal(t.hand.awaiting, 'turn');
+  e.foldOut(t, 'p2');
+  e.setBoard(t, ['9h']);
+  e.setBoard(t, ['3s']);
+  assert.equal(t.hand.stage, 'showdown');
+  assert.deepEqual(t.hand.pots[0].suggested, ['p0']);
+  e.resolveShowdown(t, [['p0']]);
+  assert.deepEqual(t.hand.result.winners, ['p0']);
+  assert.equal(t.hand.needsPersist, undefined);
+});
+
+test('nueva partida devuelve las fichas iniciales', () => {
+  const t = mesa(2, [2000, 0]);
+  assert.throws(() => e.startHand(t));
+  e.resetChips(t);
+  assert.deepEqual(t.seats.map((s) => s.chips), [1000, 1000]);
+});

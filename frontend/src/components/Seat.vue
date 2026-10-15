@@ -13,6 +13,7 @@ const props = defineProps({
   isDealer: Boolean,
   handName: String,
   betDir: { type: Object, default: () => ({ x: 0, y: -1 }) },
+  mode: { type: String, default: 'live' },
 });
 
 const turn = computed(() => props.hand?.toAct === props.seat.userId);
@@ -30,11 +31,16 @@ const blind = computed(() => {
   if (h.bbId === props.seat.userId) return 'BB';
   return null;
 });
-const won = computed(() => props.hand?.stage === 'done' && props.player?.won > 0);
+const won = computed(
+  () =>
+    props.hand?.stage === 'done' &&
+    !!props.player &&
+    (props.player.won > 0 || (props.mode === 'offline' && props.hand.result?.winners?.includes(props.seat.userId))),
+);
 const showCards = computed(() => props.player && !props.player.folded && props.hand && props.hand.stage !== 'done' || (props.player?.cards?.length && props.hand?.stage === 'done'));
 const lastLabel = computed(() => {
   const l = props.player?.last;
-  if (!l) return '';
+  if (!l || l.type === 'sb' || l.type === 'bb') return '';
   return ACTION_LABEL[l.type] + (l.amount && !['fold', 'check'].includes(l.type) ? ' ' + formatChips(l.type === 'raise' || l.type === 'bet' ? l.to || l.amount : l.amount) : '');
 });
 </script>
@@ -54,11 +60,11 @@ const lastLabel = computed(() => {
     </div>
     <div class="plate">
       <div class="name ellipsis">{{ isMe ? 'Tú' : seat.displayName }}</div>
-      <div class="chips num">{{ formatChips(stack) }}</div>
+      <div v-if="mode !== 'offline'" class="chips num">{{ formatChips(stack) }}</div>
     </div>
     <Transition name="pop">
       <div v-if="lastLabel && hand?.stage !== 'done'" :key="lastLabel" class="action" :class="player.last.type">{{ lastLabel }}</div>
-      <div v-else-if="won" class="action win">+{{ formatChips(player.won) }}</div>
+      <div v-else-if="won" class="action win">{{ mode === 'offline' ? '🏆 Gana' : '+' + formatChips(player.won) }}</div>
       <div v-else-if="seat.status === 'sitout'" class="action muted">Fuera</div>
     </Transition>
     <div v-if="handName" class="hname">{{ handName }}</div>
@@ -66,7 +72,7 @@ const lastLabel = computed(() => {
       <div
         v-if="player?.bet > 0"
         class="bet"
-        :style="{ '--bx': betDir.x * 58 + 'px', '--by': betDir.y * 58 + 'px' }"
+        :style="{ '--bx': betDir.x * 72 + 'px', '--by': betDir.y * (betDir.y > 0 ? 92 : 70) + 'px' }"
       >
         <Chip :value="player.bet" :index="0" :size="22" />
         <span class="num">{{ formatChips(player.bet) }}</span>

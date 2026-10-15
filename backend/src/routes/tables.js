@@ -7,12 +7,22 @@ import { broadcast } from '../hub.js';
 const r = Router();
 r.use(requireAuth);
 
+const MODES = ['live', 'random', 'offline'];
+
+function cleanChips(list) {
+  if (!Array.isArray(list)) return [];
+  const vals = list.map((n) => Math.floor(Number(n))).filter((n) => Number.isFinite(n) && n >= 1 && n <= 1e12);
+  return [...new Set(vals)].sort((a, b) => a - b).slice(0, 10);
+}
+
 export function cleanSettings(input = {}, base = {}) {
   const num = (v, d) => (v === undefined || v === null || v === '' ? d : Math.floor(Number(v)));
   const s = {
     minBet: num(input.minBet, base.minBet ?? 100),
     maxBet: num(input.maxBet, base.maxBet ?? 0),
     startingChips: num(input.startingChips, base.startingChips ?? 10000),
+    mode: MODES.includes(input.mode) ? input.mode : MODES.includes(base.mode) ? base.mode : 'live',
+    chips: cleanChips(input.chips !== undefined ? input.chips : base.chips ? [...base.chips] : []),
   };
   if (!(s.minBet >= 1)) throw new HttpError(400, 'La apuesta mínima debe ser al menos 1');
   if (!(s.maxBet >= 0)) throw new HttpError(400, 'Apuesta máxima no válida');

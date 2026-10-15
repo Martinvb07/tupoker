@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { toast } from '@/lib/store.js';
-import { formatChips } from '@/lib/format.js';
+import { formatChips, modeInfo } from '@/lib/format.js';
 import { chipDenominations } from '@shared/poker.js';
 import Avatar from '@/components/Avatar.vue';
 import Chip from '@/components/Chip.vue';
@@ -26,7 +26,12 @@ onMounted(async () => {
   }
 });
 
-const chips = computed(() => (table.value ? chipDenominations(table.value.settings.minBet, table.value.settings.maxBet, table.value.settings.startingChips) : []));
+const chips = computed(() => {
+  const st = table.value?.settings;
+  if (!st || st.mode === 'offline') return [];
+  return st.chips?.length ? st.chips : chipDenominations(st.minBet, st.maxBet, st.startingChips);
+});
+const mode = computed(() => modeInfo(table.value?.settings.mode));
 
 async function join() {
   loading.value = true;
@@ -64,9 +69,12 @@ async function join() {
       </div>
 
       <div class="facts">
-        <div><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
-        <div><span>Máxima</span><b class="num">{{ table.settings.maxBet ? formatChips(table.settings.maxBet) : 'Sin límite' }}</b></div>
-        <div><span>Fichas iniciales</span><b class="num">{{ formatChips(table.settings.startingChips) }}</b></div>
+        <div class="wide"><span>Modo</span><b>{{ mode.icon }} {{ mode.label }}</b><small class="muted">{{ mode.desc }}</small></div>
+        <template v-if="table.settings.mode !== 'offline'">
+          <div><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
+          <div><span>Máxima</span><b class="num">{{ table.settings.maxBet ? formatChips(table.settings.maxBet) : 'Sin límite' }}</b></div>
+          <div><span>Fichas iniciales</span><b class="num">{{ formatChips(table.settings.startingChips) }}</b></div>
+        </template>
         <div v-if="table.dealer"><span>Dealer</span><b class="row" style="gap: 6px"><Avatar :user="table.dealer" :size="22" />{{ table.dealer.displayName }}</b></div>
       </div>
 
@@ -93,5 +101,6 @@ async function join() {
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; text-align: left; margin-bottom: 18px; }
 .facts div { padding: 10px 12px; border-radius: 12px; background: rgba(5, 9, 28, 0.45); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
 .facts span { font-size: 12px; color: var(--text-3); font-weight: 600; }
+.facts .wide { grid-column: 1 / -1; }
 .chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 22px; }
 </style>

@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { auth, toast } from '@/lib/store.js';
-import { formatChips, timeAgo } from '@/lib/format.js';
+import { formatChips, timeAgo, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import Segmented from '@/components/Segmented.vue';
@@ -149,8 +149,11 @@ async function removeGroup() {
             <h3>{{ g.activeTable ? 'Mesa en juego' : 'Mesa del grupo' }}</h3>
             <p class="small muted" v-if="g.activeTable">{{ g.activeTable.players }} jugadores · mano {{ g.activeTable.handNo }}</p>
             <p class="small muted" v-else>
-              Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }} ·
-              {{ g.defaults.maxBet ? 'máx ' + formatChips(g.defaults.maxBet) : 'sin límite' }} · {{ formatChips(g.defaults.startingChips) }} fichas
+              {{ modeInfo(g.defaults.mode).icon }} {{ modeInfo(g.defaults.mode).short }}
+              <template v-if="g.defaults.mode !== 'offline'">
+                · Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }} ·
+                {{ g.defaults.maxBet ? 'máx ' + formatChips(g.defaults.maxBet) : 'sin límite' }} · {{ formatChips(g.defaults.startingChips) }} fichas
+              </template>
             </p>
           </div>
           <button class="btn btn-primary btn-lg" :disabled="opening" @click="openTable">

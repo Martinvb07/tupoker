@@ -4,6 +4,11 @@ Web para gestionar partidas de póker Texas Hold'em con amigos usando **cartas f
 
 ## Funcionalidades
 
+- **3 modos de juego**:
+  - 🃏 **En vivo**: cartas físicas y fichas. El dealer pone el board y cada jugador registra sus cartas.
+  - 🎲 **Aleatorio**: con fichas. La app baraja y reparte las cartas y el board, y el showdown se resuelve solo.
+  - ☕ **Sin dinero**: cartas físicas sin apuestas. Solo board, jugadas, probabilidades y ganador; no cuenta para los rankings.
+- **Partida terminada**: cuando un jugador se queda con todas las fichas, el dealer puede empezar una **nueva partida** (todos vuelven a las fichas iniciales) o hacer recompras.
 - **Cuentas** con usuario y contraseña. Todos empiezan con el mismo rol.
 - **Mesas** con código de 6 letras y **QR** para entrar. El **dealer** define la apuesta mínima (ciega grande) y la máxima, y de ahí salen las **fichas** de la mesa (5K, 25K, 50K…). El rol de dealer lo pasa el creador o el dealer actual, y puede jugar o solo repartir.
 - **Panel de apuestas estilo casino**: abanico de fichas, círculo para apilar, deshacer, limpiar y doblar, y atajos (mínimo, ½ bote, bote, all-in). Acciones: retirarse, pasar, igualar, apostar/subir y all-in.

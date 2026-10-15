@@ -29,7 +29,13 @@ function normalize(doc) {
     ownerId: t.ownerId?.toString(),
     dealerId: t.dealerId?.toString(),
     groupId: t.groupId ? t.groupId.toString() : null,
-    settings: { minBet: t.settings.minBet, maxBet: t.settings.maxBet, startingChips: t.settings.startingChips },
+    settings: {
+      minBet: t.settings.minBet,
+      maxBet: t.settings.maxBet,
+      startingChips: t.settings.startingChips,
+      mode: t.settings.mode || 'live',
+      chips: [...(t.settings.chips || [])],
+    },
   };
 }
 
@@ -140,12 +146,15 @@ export function viewFor(table, userId) {
     me: userId,
     status: table.status,
     settings: table.settings,
-    chips: chipDenominations(table.settings.minBet, table.settings.maxBet, table.settings.startingChips),
+    chips: table.settings.chips?.length
+      ? table.settings.chips
+      : chipDenominations(table.settings.minBet, table.settings.maxBet, table.settings.startingChips),
     handNo: table.handNo,
     seats: table.seats.map((s) => ({ ...s, online: isOnline(table.code, s.userId) })),
     hand: hand
       ? {
           no: hand.no,
+          mode: hand.mode || 'live',
           stage: hand.stage,
           awaiting: hand.awaiting,
           board: hand.board,

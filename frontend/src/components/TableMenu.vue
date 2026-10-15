@@ -8,7 +8,7 @@ import Segmented from './Segmented.vue';
 import SettingsForm from './SettingsForm.vue';
 import { formatChips, formatSigned } from '@/lib/format.js';
 
-const props = defineProps({ open: Boolean, state: Object, run: Function });
+const props = defineProps({ open: Boolean, state: Object, run: Function, initialTab: { type: String, default: 'players' } });
 const emit = defineEmits(['close']);
 const router = useRouter();
 
@@ -24,11 +24,17 @@ const settings = ref({ ...props.state.settings });
 const name = ref(props.state.name);
 watch(() => props.open, (o) => {
   if (o) {
-    settings.value = { ...props.state.settings };
+    settings.value = { ...props.state.settings, chips: [...(props.state.settings.chips || [])] };
     name.value = props.state.name;
     chipAmount.value = props.state.settings.startingChips;
+    tab.value = tabs.value.some((t) => t.value === props.initialTab) ? props.initialTab : 'players';
   }
 });
+const offline = computed(() => (props.state.settings.mode || 'live') === 'offline');
+async function newGame() {
+  if (!confirm(`¿Empezar una nueva partida? Todos vuelven a ${formatChips(props.state.settings.startingChips)} fichas.`)) return;
+  if (await props.run('dealer:resetChips')) emit('close');
+}
 
 const canAssignDealer = computed(() => props.state.isDealer || props.state.isOwner);
 const live = computed(() => props.state.hand && props.state.hand.stage !== 'done');
@@ -110,6 +116,7 @@ async function closeTable() {
         <p v-if="live" class="hint">Podrás guardar los cambios cuando termine la mano actual.</p>
         <button class="btn btn-primary btn-block" :disabled="live" @click="saveSettings">Guardar ajustes</button>
         <div class="divider"></div>
+        <button v-if="!offline" class="btn btn-block" :disabled="live" @click="newGame"><Icon name="rotate" :size="18" />Nueva partida (reiniciar fichas)</button>
         <button class="btn btn-danger btn-block" @click="closeTable"><Icon name="x" :size="18" />Cerrar la mesa</button>
       </div>
 

@@ -1,20 +1,41 @@
-// Lógica pura de una mano de Texas Hold'em con cartas físicas:
-// el dealer introduce el board, los jugadores (opcionalmente) sus cartas,
-// y la app lleva fichas, turnos, botes y ganadores.
-import { evaluate, isValidCard } from '../../shared/poker.js';
+// Lógica pura de una mano de Texas Hold'em. Tres modos:
+//  - live:    cartas físicas; el dealer introduce el board, los jugadores sus cartas, con fichas.
+//  - random:  la app baraja y reparte cartas y board, con fichas.
+//  - offline: cartas físicas sin dinero; solo board, jugadas, probabilidades y ganador.
+import { randomInt } from 'node:crypto';
+import { evaluate, isValidCard, FULL_DECK } from '../../shared/poker.js';
 
 export class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
 
 const STAGES = ['preflop', 'flop', 'turn', 'river'];
 const BOARD_SIZE = { flop: 3, turn: 4, river: 5 };
+export const MODES = ['live', 'random', 'offline'];
 
 export function blinds(settings) {
   const bb = Math.max(1, Math.floor(settings.minBet));
   return { sb: Math.max(1, Math.floor(bb / 2)), bb };
 }
 
+export const modeOf = (table) => (MODES.includes(table.settings?.mode) ? table.settings.mode : 'live');
+const handMode = (hand) => hand.mode || 'live';
+
+function shuffledDeck() {
+  const d = [...FULL_DECK];
+  for (let i = d.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
 const playable = (seat) => seat.status === 'active' && seat.chips > 0;
+const playableIn = (mode) => (mode === 'offline' ? (seat) => seat.status === 'active' : playable);
+
+/** Jugadores que pueden entrar en la siguiente mano. */
+export function eligibleSeats(table) {
+  return table.seats.filter(playableIn(modeOf(table)));
+}
 
 function nextIn(list, fromId, pred = () => true) {
   const n = list.length;
@@ -56,16 +77,18 @@ export function isHandLive(table) {
 export function startHand(table) {
   if (table.status === 'closed') fail('La mesa está cerrada');
   if (isHandLive(table)) fail('Ya hay una mano en curso');
-  const seats = table.seats.filter(playable);
-  if (seats.length < 2) fail('Se necesitan al menos 2 jugadores con fichas');
+  const mode = modeOf(table);
+  const ok = playableIn(mode);
+  const seats = table.seats.filter(ok);
+  if (seats.length < 2) fail(mode === 'offline' ? 'Se necesitan al menos 2 jugadores activos' : 'Se necesitan al menos 2 jugadores con fichas');
 
   const { sb, bb } = blinds(table.settings);
   const prevBtn = table.buttonUserId;
   let button;
-  if (prevBtn && table.seats.some((s) => s.userId === prevBtn)) button = nextIn(table.seats, prevBtn, playable);
+  if (prevBtn && table.seats.some((s) => s.userId === prevBtn)) button = nextIn(table.seats, prevBtn, ok);
   else button = seats[0];
 
-  const players = table.seats.filter(playable).map((s) => ({
+  const players = seats.map((s) => ({
     userId: s.userId,
     stack: s.chips,
     startStack: s.chips,
@@ -80,6 +103,7 @@ export function startHand(table) {
 
   const hand = {
     no: (table.handNo || 0) + 1,
+    mode,
     stage: 'preflop',
     awaiting: null,
     board: [],
@@ -95,6 +119,21 @@ export function startHand(table) {
     log: [],
     startedAt: Date.now(),
   };
+
+  table.buttonUserId = button.userId;
+  table.handNo = hand.no;
+  table.status = 'playing';
+  table.hand = hand;
+
+  if (mode === 'offline') {
+    // sin apuestas: el dealer pone el flop cuando quiera
+    hand.awaiting = 'flop';
+    return hand;
+  }
+  if (mode === 'random') {
+    hand.deck = shuffledDeck();
+    for (const p of players) p.cards = hand.deck.splice(0, 2);
+  }
 
   let sbP, bbP;
   if (players.length === 2) {
@@ -113,11 +152,6 @@ export function startHand(table) {
   log(hand, { userId: sbP.userId, type: 'sb', amount: sbPaid });
   log(hand, { userId: bbP.userId, type: 'bb', amount: bbPaid });
   hand.currentBet = Math.max(bb, sbPaid, bbPaid);
-
-  table.buttonUserId = button.userId;
-  table.handNo = hand.no;
-  table.status = 'playing';
-  table.hand = hand;
 
   const first = nextIn(players, bbP.userId, canAct);
   hand.toAct = first ? first.userId : null;
@@ -168,6 +202,7 @@ export function legalActions(table, userId) {
 export function act(table, userId, type, amountTo) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done' || hand.stage === 'showdown') fail('No hay ninguna ronda de apuestas activa');
+  if (handMode(hand) === 'offline') fail('En el modo sin dinero no hay apuestas');
   if (hand.awaiting) fail('Esperando a que el dealer ponga las cartas');
   if (hand.toAct !== userId) fail('No es tu turno');
   const p = getPlayer(hand, userId);
@@ -251,16 +286,26 @@ function endRound(table) {
   const idx = STAGES.indexOf(hand.stage);
   if (idx < 3) {
     hand.awaiting = STAGES[idx + 1];
+    if (handMode(hand) === 'random') dealNext(table);
   } else {
     goShowdown(table);
   }
 }
 
+/** Modo aleatorio: la app saca del mazo las cartas de la siguiente calle. */
+function dealNext(table) {
+  const hand = table.hand;
+  const need = BOARD_SIZE[hand.awaiting] - hand.board.length;
+  hand.deck.shift(); // carta quemada
+  setBoard(table, hand.deck.splice(0, need), { auto: true });
+}
+
 // ---------------- Board (dealer) ----------------
 
-export function setBoard(table, cards) {
+export function setBoard(table, cards, { auto = false } = {}) {
   const hand = table.hand;
   if (!hand || !hand.awaiting) fail('No toca poner cartas ahora');
+  if (handMode(hand) === 'random' && !auto) fail('En el modo aleatorio las cartas las reparte la app');
   const stage = hand.awaiting;
   const need = BOARD_SIZE[stage] - hand.board.length;
   if (!Array.isArray(cards) || cards.length !== need) fail(`Debes elegir ${need} carta(s)`);
@@ -276,6 +321,13 @@ export function setBoard(table, cards) {
   hand.awaiting = null;
   log(hand, { type: 'board', cards });
 
+  if (handMode(hand) === 'offline') {
+    hand.toAct = null;
+    if (stage === 'river') goShowdown(table);
+    else hand.awaiting = STAGES[STAGES.indexOf(stage) + 1];
+    return hand;
+  }
+
   const actors = hand.players.filter(canAct);
   if (actors.length >= 2) {
     const first = nextIn(hand.players, hand.buttonId, canAct);
@@ -290,16 +342,20 @@ export function setBoard(table, cards) {
 /** El dealer puede corregir la última carta/s puestas si se equivocó (antes de que nadie actúe). */
 export function undoBoard(table) {
   const hand = table.hand;
-  if (!hand || hand.awaiting || hand.stage === 'preflop' || hand.stage === 'done' || hand.stage === 'showdown') fail('No se puede corregir ahora');
+  if (!hand || hand.stage === 'preflop' || hand.stage === 'done' || hand.stage === 'showdown') fail('No se puede corregir ahora');
+  const offline = handMode(hand) === 'offline';
+  if (handMode(hand) === 'random') fail('En el modo aleatorio no se corrigen cartas');
+  if (hand.awaiting && !offline) fail('No se puede corregir ahora');
   const acted = hand.log.length && hand.log[hand.log.length - 1].type !== 'board';
-  if (acted) fail('Ya hubo acciones en esta calle');
+  if (acted && !offline) fail('Ya hubo acciones en esta calle');
   const prev = STAGES[STAGES.indexOf(hand.stage) - 1];
   const keep = prev === 'preflop' ? 0 : BOARD_SIZE[prev];
   hand.board = hand.board.slice(0, keep);
   hand.awaiting = hand.stage;
   hand.stage = prev;
   hand.toAct = null;
-  hand.log.pop();
+  const i = hand.log.map((l) => l.type).lastIndexOf('board');
+  if (i >= 0) hand.log.splice(i, 1);
 }
 
 // ---------------- Cartas propias ----------------
@@ -307,6 +363,7 @@ export function undoBoard(table) {
 export function setHoleCards(table, userId, cards) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done') fail('No hay mano activa');
+  if (handMode(hand) === 'random') fail('En el modo aleatorio la app reparte tus cartas');
   const p = getPlayer(hand, userId);
   if (!p) fail('No estás en esta mano');
   if (!Array.isArray(cards) || cards.length > 2) fail('Máximo 2 cartas');
@@ -344,7 +401,10 @@ function goShowdown(table) {
   hand.stage = 'showdown';
   hand.awaiting = null;
   hand.toAct = null;
-  const pots = computePots(hand.players);
+  const pots =
+    handMode(hand) === 'offline'
+      ? [{ amount: 0, eligible: hand.players.filter(inHand).map((p) => p.userId) }]
+      : computePots(hand.players);
   const scores = {};
   if (hand.board.length === 5) {
     for (const p of hand.players.filter(inHand)) {
@@ -368,6 +428,9 @@ function goShowdown(table) {
   // si solo hay un bote con un único elegible (resto all-in que ya se repartió) se resuelve solo
   if (hand.pots.every((p) => p.eligible.length === 1)) {
     resolveShowdown(table, hand.pots.map((p) => p.eligible));
+  } else if (handMode(hand) === 'random' && hand.pots.every((p) => p.complete && p.suggested.length)) {
+    // con cartas repartidas por la app el ganador se sabe con certeza
+    resolveShowdown(table, hand.pots.map((p) => p.suggested));
   }
 }
 
@@ -416,8 +479,19 @@ function finishHand(table, payout, how) {
   hand.toAct = null;
   hand.awaiting = null;
   hand.finishedAt = Date.now();
+  delete hand.deck;
   log(hand, { type: 'end', payout });
-  hand.needsPersist = true;
+  // el modo sin dinero no cuenta para los rankings
+  if (handMode(hand) !== 'offline') hand.needsPersist = true;
+}
+
+/** Nueva partida: todos vuelven a las fichas iniciales. */
+export function resetChips(table) {
+  if (isHandLive(table)) fail('Espera a que termine la mano');
+  for (const s of table.seats) {
+    s.chips = table.settings.startingChips;
+    s.buyIn = table.settings.startingChips;
+  }
 }
 
 /** Un jugador abandona la mano fuera de su turno (se levanta, se va, lo expulsan). */

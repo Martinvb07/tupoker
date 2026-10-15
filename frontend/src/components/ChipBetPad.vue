@@ -314,6 +314,12 @@ const visibleStack = computed(() => placed.value.slice(-8));
   box-shadow: 0 10px 26px -10px rgba(245, 181, 68, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
+@media (max-height: 860px) {
+  .circle { width: 112px; height: 112px; }
+  .pad { gap: 8px; }
+  .act { height: 48px; }
+}
+
 /* abanico */
 .fan-overlay {
   position: fixed; inset: 0; z-index: 150;

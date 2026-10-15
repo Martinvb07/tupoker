@@ -37,6 +37,13 @@ export const ACTION_LABEL = {
   bb: 'Ciega gr.',
 };
 
+export const MODES = [
+  { value: 'live', icon: '🃏', label: 'En vivo', short: 'En vivo', desc: 'Cartas físicas y fichas. El dealer pone el board y cada uno registra sus cartas.' },
+  { value: 'random', icon: '🎲', label: 'Aleatorio', short: 'Aleatorio', desc: 'Con fichas. La app baraja y reparte las cartas y el board.' },
+  { value: 'offline', icon: '☕', label: 'Sin dinero', short: 'Sin dinero', desc: 'Cartas físicas sin apuestas: solo jugadas, probabilidades y ganador.' },
+];
+export const modeInfo = (m) => MODES.find((x) => x.value === m) || MODES[0];
+
 export const CHIP_COLORS = [
   { base: '#f59e0b', edge: '#fde68a', text: '#fff' },
   { base: '#dc2626', edge: '#fecaca', text: '#fff' },

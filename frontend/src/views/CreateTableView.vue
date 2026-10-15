@@ -8,7 +8,7 @@ import Icon from '@/components/Icon.vue';
 
 const router = useRouter();
 const name = ref('');
-const settings = ref({ minBet: 100, maxBet: 0, startingChips: 10000 });
+const settings = ref({ minBet: 100, maxBet: 0, startingChips: 10000, mode: 'live', chips: [] });
 const dealerPlays = ref(true);
 const loading = ref(false);
 
@@ -31,7 +31,7 @@ async function create() {
       <div>
         <div class="eyebrow">Nueva mesa</div>
         <h1>Prepara la partida</h1>
-        <p>Tú serás el dealer: defines la mínima y la máxima, y de ahí salen las fichas. Luego podrás pasar el rol a otro.</p>
+        <p>Tú serás el dealer: eliges el modo, la mínima, la máxima y las fichas. Luego podrás pasar el rol a otro.</p>
       </div>
     </div>
 

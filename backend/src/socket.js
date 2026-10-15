@@ -112,6 +112,14 @@ export function initSocket(httpServer) {
     handle('dealer:resolve', (t, { winners }) => engine.resolveShowdown(t, winners), { dealerOnly: true });
     handle('dealer:forceFold', (t, { userId }) => engine.forceFold(t, userId), { dealerOnly: true });
     handle('dealer:cancelHand', (t) => engine.cancelHand(t), { dealerOnly: true });
+    handle('dealer:resetChips', (t) => engine.resetChips(t), { dealerOnly: true });
+
+    // Modo sin dinero: cualquiera puede retirarse en cualquier momento
+    handle('table:fold', (t) => {
+      if (engine.modeOf(t) !== 'offline') throw new GameError('Usa el botón de retirarse cuando sea tu turno');
+      if (!engine.getPlayer(t.hand, uid)) throw new GameError('No estás en esta mano');
+      engine.foldOut(t, uid);
+    });
 
     handle('dealer:settings', (t, { settings, name }) => {
       if (engine.isHandLive(t)) throw new GameError('Cambia la configuración entre manos');

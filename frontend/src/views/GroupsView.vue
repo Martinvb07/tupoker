@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { toast } from '@/lib/store.js';
-import { formatChips } from '@/lib/format.js';
+import { formatChips, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Sheet from '@/components/Sheet.vue';
 import SettingsForm from '@/components/SettingsForm.vue';
@@ -17,7 +17,7 @@ const loading = ref(false);
 
 const EMOJIS = ['♠️', '♥️', '♦️', '♣️', '🃏', '🎰', '👑', '🔥', '🦈', '🐺', '🍻', '💎'];
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
-const form = ref({ name: '', description: '', emoji: '♠️', color: '#10b981', defaults: { minBet: 100, maxBet: 0, startingChips: 10000 } });
+const form = ref({ name: '', description: '', emoji: '♠️', color: '#10b981', defaults: { minBet: 100, maxBet: 0, startingChips: 10000, mode: 'live', chips: [] } });
 
 async function load() {
   groups.value = (await api.get('/groups')).groups;
@@ -93,8 +93,11 @@ async function join() {
         </div>
         <p v-if="g.description" class="desc muted small">{{ g.description }}</p>
         <div class="row tags">
-          <span class="badge">Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }}</span>
-          <span class="badge">{{ formatChips(g.defaults.startingChips) }} fichas</span>
+          <span class="badge">{{ modeInfo(g.defaults.mode).icon }} {{ modeInfo(g.defaults.mode).short }}</span>
+          <template v-if="g.defaults.mode !== 'offline'">
+            <span class="badge">Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }}</span>
+            <span class="badge">{{ formatChips(g.defaults.startingChips) }} fichas</span>
+          </template>
         </div>
       </RouterLink>
     </TransitionGroup>

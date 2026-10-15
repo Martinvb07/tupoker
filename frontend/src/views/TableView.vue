@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { getSocket, emit, connected } from '@/lib/socket.js';
 import { toast } from '@/lib/store.js';
-import { formatChips, STAGE_LABEL } from '@/lib/format.js';
+import { formatChips, STAGE_LABEL, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Seat from '@/components/Seat.vue';
+import Avatar from '@/components/Avatar.vue';
 import PlayingCard from '@/components/PlayingCard.vue';
 import CardPicker from '@/components/CardPicker.vue';
 import ChipBetPad from '@/components/ChipBetPad.vue';
@@ -21,12 +22,16 @@ const code = computed(() => String(route.params.code).toUpperCase());
 const s = ref(null); // estado de la mesa
 const busy = ref(false);
 const showShare = ref(route.query.share === '1');
-const showMenu = ref(false);
+const menu = ref({ open: false, tab: 'players' });
 const showShowdown = ref(false);
 const picker = ref({ open: false, mode: null });
 
 const hand = computed(() => s.value?.hand);
-const live = computed(() => hand.value && hand.value.stage !== 'done');
+const live = computed(() => !!hand.value && hand.value.stage !== 'done');
+// el modo de la mano en curso manda; entre manos, el de la mesa
+const mode = computed(() => (live.value ? hand.value.mode : s.value?.settings.mode) || 'live');
+const offline = computed(() => mode.value === 'offline');
+const random = computed(() => mode.value === 'random');
 const me = computed(() => hand.value?.players.find((p) => p.userId === s.value.me) || null);
 const mySeat = computed(() => s.value?.seats.find((x) => x.userId === s.value.me));
 const myTurn = computed(() => !!s.value?.legal);
@@ -35,7 +40,6 @@ const seatsById = computed(() => Object.fromEntries((s.value?.seats || []).map((
 const nameOf = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
 const opponents = computed(() => (hand.value ? hand.value.players.filter((p) => !p.folded && p.userId !== s.value.me).length : 0));
 const totalPot = computed(() => (hand.value ? hand.value.players.reduce((a, p) => a + p.total, 0) : 0));
-const potForBet = computed(() => totalPot.value);
 
 // asientos alrededor de la mesa, conmigo abajo
 const layout = computed(() => {
@@ -47,24 +51,32 @@ const layout = computed(() => {
   return ordered.map((seat, i) => {
     const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
     const cos = Math.cos(a), sin = Math.sin(a);
-    return {
-      seat,
-      x: 50 + cos * 47,
-      y: 50 + sin * 45,
-      dir: { x: -cos, y: -sin },
-    };
+    return { seat, x: 50 + cos * 47, y: 50 + sin * 45, dir: { x: -cos, y: -sin } };
   });
 });
 
 const handNames = computed(() => hand.value?.handNames || {});
 const winnerText = computed(() => {
-  const r = hand.value?.result;
-  if (!r || hand.value.stage !== 'done') return '';
+  const h = hand.value;
+  const r = h?.result;
+  if (!r || h.stage !== 'done') return '';
+  if (h.mode === 'offline') {
+    return r.winners.map((id) => `${nameOf(id)} ${id === s.value.me ? 'ganas' : 'gana'}${handNames.value[id] ? ' con ' + handNames.value[id] : ''}`).join(' · ');
+  }
   const ws = Object.entries(r.payout).filter(([, v]) => v > 0);
-  if (!ws.length) return '';
   return ws
     .map(([id, v]) => `${nameOf(id)} ${id === s.value.me ? 'ganas' : 'gana'} ${formatChips(v)}${handNames.value[id] ? ' con ' + handNames.value[id] : ''}`)
     .join(' · ');
+});
+
+// ---------- partida terminada (alguien se quedó con todas las fichas) ----------
+const activeSeats = computed(() => (s.value?.seats || []).filter((x) => x.status === 'active'));
+const withChips = computed(() => activeSeats.value.filter((x) => x.chips > 0));
+const gameOver = computed(() => !!s.value && !offline.value && !live.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
+const champion = computed(() => (gameOver.value && withChips.value.length === 1 ? withChips.value[0] : null));
+const canStart = computed(() => {
+  if (!s.value?.isDealer || live.value) return false;
+  return (offline.value ? activeSeats.value.length : withChips.value.length) >= 2;
 });
 
 // ---------- socket ----------
@@ -84,18 +96,24 @@ function onState(st) {
   if (st.code !== code.value) return;
   const wasMyTurn = myTurn.value;
   s.value = st;
-  if (st.legal && !wasMyTurn) {
-    navigator.vibrate?.([30, 40, 30]);
-  }
+  if (st.legal && !wasMyTurn) navigator.vibrate?.([30, 40, 30]);
   if (st.status === 'closed') {
     toast('El dealer cerró la mesa');
+    closeOverlays();
     router.replace('/');
   }
 }
 function onKicked(p) {
   if (p.code !== code.value) return;
   toast.error('Has sido expulsado de la mesa');
+  closeOverlays();
   router.replace('/');
+}
+function closeOverlays() {
+  picker.value.open = false;
+  menu.value.open = false;
+  showShowdown.value = false;
+  showShare.value = false;
 }
 onMounted(() => {
   sock = getSocket();
@@ -109,10 +127,11 @@ onUnmounted(() => {
   sock.off('table:kicked', onKicked);
   sock.off('connect', subscribe);
   sock.emit('table:unsubscribe', { code: code.value });
+  document.body.style.overflow = '';
 });
 
 async function run(event, payload = {}) {
-  if (busy.value) return;
+  if (busy.value) return false;
   busy.value = true;
   try {
     await emit(event, { code: code.value, ...payload });
@@ -126,6 +145,13 @@ async function run(event, payload = {}) {
 }
 
 const doAction = (a) => run('table:action', a);
+const openMenu = (tab = 'players') => (menu.value = { open: true, tab });
+async function newGame() {
+  if (await run('dealer:resetChips')) toast.success('Nueva partida: fichas repartidas de nuevo');
+}
+async function resolve(winners) {
+  if (await run('dealer:resolve', { winners })) showShowdown.value = false;
+}
 
 // ---------- cartas ----------
 const pickerConfig = computed(() => {
@@ -143,35 +169,44 @@ async function onPicked(cards) {
   const ok = picker.value.mode === 'hole' ? await run('table:cards', { cards }) : await run('dealer:board', { cards });
   if (ok) picker.value.open = false;
 }
-const openPicker = (mode) => (picker.value = { open: true, mode });
+const openPicker = (m) => {
+  if (m === 'hole' && random.value) return;
+  picker.value = { open: true, mode: m };
+};
 
-// el dealer abre el selector directamente cuando toca poner cartas
+// el dealer abre el selector directamente cuando toca poner cartas (no en aleatorio, que reparte la app)
 watch(
   () => hand.value?.awaiting,
   (aw) => {
-    if (aw && s.value?.isDealer) setTimeout(() => openPicker('board'), 450);
+    if (aw && s.value?.isDealer && !random.value && !offline.value) setTimeout(() => openPicker('board'), 450);
+    if (!aw && picker.value.mode === 'board') picker.value.open = false;
   },
 );
 watch(
   () => hand.value?.stage,
   (st) => {
     if (st === 'showdown' && s.value?.isDealer) showShowdown.value = true;
-    if (st === 'preflop' && me.value && !myCards.value.length) toast('Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
+    if (st !== 'showdown') showShowdown.value = false;
+    if (st === 'preflop' && me.value && !myCards.value.length && !random.value) {
+      toast('Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
+    }
   },
 );
 
-const canStart = computed(() => s.value?.isDealer && !live.value && (s.value?.seats.filter((x) => x.status === 'active' && x.chips > 0).length || 0) >= 2);
 const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => hand.value?.board[i] || ''));
 const toActName = computed(() => (hand.value?.toAct ? nameOf(hand.value.toAct) : ''));
 const statusLine = computed(() => {
   const h = hand.value;
   if (!s.value) return '';
+  if (gameOver.value) return champion.value ? `🏆 ${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
   if (!h || h.stage === 'done') return s.value.isDealer ? 'Listo para repartir' : 'Esperando al dealer';
   if (h.awaiting) return `El dealer pone el ${STAGE_LABEL[h.awaiting]}`;
-  if (h.stage === 'showdown') return 'Showdown: el dealer reparte el bote';
+  if (h.stage === 'showdown') return offline.value ? 'Showdown: el dealer confirma quién gana' : 'Showdown: el dealer reparte el bote';
   if (h.toAct === s.value.me) return '¡Es tu turno!';
-  return `Turno de ${toActName.value}`;
+  if (h.toAct) return `Turno de ${toActName.value}`;
+  return STAGE_LABEL[h.stage];
 });
+const info = computed(() => modeInfo(mode.value));
 </script>
 
 <template>
@@ -183,12 +218,13 @@ const statusLine = computed(() => {
         <div class="ellipsis tname">{{ s.name }}</div>
         <div class="sub small">
           <span class="dotc" :class="{ on: connected }"></span>
-          <template v-if="hand">Mano #{{ hand.no }} · {{ STAGE_LABEL[hand.stage] }}</template>
-          <template v-else>Ciegas {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
+          <span class="mbadge">{{ info.icon }} {{ info.short }}</span>
+          <template v-if="hand">· Mano #{{ hand.no }}</template>
+          <template v-if="!offline">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
       <button class="codebtn" @click="showShare = true"><Icon name="qr" :size="16" />{{ s.code }}</button>
-      <button class="icon-btn" aria-label="Menú" @click="showMenu = true"><Icon name="menu" /></button>
+      <button class="icon-btn" aria-label="Menú" @click="openMenu()"><Icon name="menu" /></button>
     </header>
 
     <!-- mesa -->
@@ -197,7 +233,7 @@ const statusLine = computed(() => {
         <div class="rail"></div>
         <div class="center">
           <Transition name="pop">
-            <div v-if="totalPot > 0" class="pot num" :key="'pot'">
+            <div v-if="totalPot > 0 && !offline" class="pot num" key="pot">
               <span class="pot-chip"></span>Bote {{ formatChips(totalPot) }}
             </div>
           </Transition>
@@ -205,22 +241,18 @@ const statusLine = computed(() => {
             <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" size="md" class="bslot"><span></span></PlayingCard>
           </div>
           <Transition name="fade" mode="out-in">
-            <div :key="statusLine + winnerText" class="status" :class="{ mine: myTurn, win: winnerText }">
+            <div :key="statusLine + winnerText" class="status" :class="{ mine: myTurn, win: winnerText || gameOver }">
               {{ winnerText || statusLine }}
             </div>
           </Transition>
         </div>
 
-        <div
-          v-for="l in layout"
-          :key="l.seat.userId"
-          class="seat-pos"
-          :style="{ left: l.x + '%', top: l.y + '%' }"
-        >
+        <div v-for="l in layout" :key="l.seat.userId" class="seat-pos" :style="{ left: l.x + '%', top: l.y + '%' }">
           <Seat
             :seat="l.seat"
             :player="hand?.players.find((p) => p.userId === l.seat.userId)"
             :hand="hand"
+            :mode="mode"
             :is-me="l.seat.userId === s.me"
             :is-dealer="l.seat.userId === s.dealerId"
             :hand-name="handNames[l.seat.userId]"
@@ -232,53 +264,82 @@ const statusLine = computed(() => {
 
     <!-- dock inferior -->
     <section class="dock">
+      <!-- partida terminada -->
+      <Transition name="slide">
+        <div v-if="gameOver" class="gameover">
+          <div class="go-head">
+            <Avatar v-if="champion" :user="champion" :size="52" ring />
+            <div class="grow">
+              <div class="eyebrow">Partida terminada</div>
+              <b class="go-name">{{ champion ? `${nameOf(champion.userId)} se queda con todo` : 'Nadie más tiene fichas' }}</b>
+              <div v-if="champion" class="small muted num">{{ formatChips(champion.chips) }} fichas</div>
+            </div>
+          </div>
+          <template v-if="s.isDealer">
+            <div class="row go-actions">
+              <button class="btn btn-primary btn-lg grow" :disabled="busy" @click="newGame"><Icon name="rotate" :size="18" />Nueva partida</button>
+              <button class="btn btn-lg" @click="openMenu('players')"><Icon name="coins" :size="18" />Recompras</button>
+            </div>
+            <p class="hint">"Nueva partida" devuelve a todos {{ formatChips(s.settings.startingChips) }} fichas. Con "Recompras" das fichas solo a algunos.</p>
+          </template>
+          <p v-else class="hint">Espera a que el dealer empiece una nueva partida o te haga una recompra.</p>
+        </div>
+      </Transition>
+
       <!-- controles del dealer -->
-      <div v-if="s.isDealer" class="dealer">
+      <div v-if="s.isDealer && !gameOver && !myTurn" class="dealer">
         <div class="dl-tag"><span>🎩</span> Dealer</div>
         <template v-if="!live">
           <button class="btn btn-primary btn-lg grow" :disabled="!canStart || busy" @click="run('dealer:start')">
             <Icon name="play" :size="18" />Repartir mano {{ (s.handNo || 0) + 1 }}
           </button>
+          <button class="icon-btn big" title="Ajustes de la mesa" @click="openMenu('settings')"><Icon name="settings" /></button>
         </template>
-        <template v-else-if="hand.awaiting">
+        <template v-else-if="hand.awaiting && !random">
           <button class="btn btn-primary btn-lg grow glow" @click="openPicker('board')">
             <Icon name="cards" :size="18" />Poner el {{ STAGE_LABEL[hand.awaiting] }}
           </button>
+          <button v-if="offline && hand.stage !== 'preflop'" class="btn btn-sm btn-ghost" :disabled="busy" title="Corregir cartas" @click="run('dealer:undoBoard')"><Icon name="undo" :size="16" /></button>
         </template>
         <template v-else-if="hand.stage === 'showdown'">
-          <button class="btn btn-success btn-lg grow glow" @click="showShowdown = true"><Icon name="trophy" :size="18" />Repartir el bote</button>
+          <button class="btn btn-success btn-lg grow glow" @click="showShowdown = true">
+            <Icon name="trophy" :size="18" />{{ offline ? 'Elegir ganador' : 'Repartir el bote' }}
+          </button>
         </template>
         <template v-else>
           <div class="grow small muted">Turno de <b class="txt">{{ toActName }}</b></div>
-          <button v-if="hand.toAct !== s.me" class="btn btn-sm" :disabled="busy" @click="run('dealer:forceFold', { userId: hand.toAct })">Forzar</button>
-          <button v-if="hand.stage !== 'preflop'" class="btn btn-sm btn-ghost" :disabled="busy" @click="run('dealer:undoBoard')" title="Corregir cartas"><Icon name="undo" :size="16" /></button>
+          <button v-if="hand.toAct && hand.toAct !== s.me" class="btn btn-sm" :disabled="busy" @click="run('dealer:forceFold', { userId: hand.toAct })">Forzar</button>
+          <button v-if="hand.stage !== 'preflop' && !random" class="btn btn-sm btn-ghost" :disabled="busy" title="Corregir cartas" @click="run('dealer:undoBoard')"><Icon name="undo" :size="16" /></button>
         </template>
       </div>
-      <p v-if="s.isDealer && !canStart && !live" class="hint center">Se necesitan al menos 2 jugadores activos con fichas.</p>
+      <p v-if="s.isDealer && !canStart && !live && !gameOver" class="hint center">
+        {{ offline ? 'Se necesitan al menos 2 jugadores activos.' : 'Se necesitan al menos 2 jugadores activos con fichas.' }}
+      </p>
 
       <!-- jugador -->
       <div v-if="me && live" class="player">
         <div class="mine">
-          <button class="hole" @click="openPicker('hole')" :aria-label="'Elegir mis cartas'">
-            <PlayingCard :card="myCards[0] || ''" placeholder size="lg" :dim="me.folded">?</PlayingCard>
-            <PlayingCard :card="myCards[1] || ''" placeholder size="lg" :dim="me.folded">?</PlayingCard>
-            <span class="edit"><Icon name="edit" :size="13" /></span>
+          <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
+            <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? 'md' : 'lg'" :dim="me.folded">?</PlayingCard>
+            <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? 'md' : 'lg'" :dim="me.folded">?</PlayingCard>
+            <span v-if="!random" class="edit"><Icon name="edit" :size="13" /></span>
           </button>
           <EquityPanel v-if="!me.folded" class="grow" :hole="myCards" :board="hand.board" :opponents="opponents" :compact="myTurn" />
           <div v-else class="grow folded-msg">Te has retirado de esta mano</div>
         </div>
+        <button v-if="offline && !me.folded && hand.stage !== 'showdown'" class="btn btn-danger btn-block" :disabled="busy" @click="run('table:fold')">Retirarme de esta mano</button>
         <Transition name="slide">
-          <div v-if="myTurn" class="padwrap">
-            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="potForBet" :busy="busy" @action="doAction" />
+          <div v-if="myTurn && !offline" class="padwrap">
+            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" @action="doAction" />
           </div>
         </Transition>
       </div>
-      <div v-else-if="mySeat && !s.isDealer" class="waiting">
+      <div v-else-if="mySeat && !s.isDealer && !gameOver" class="waiting">
         <template v-if="mySeat.status === 'sitout'">
           <span>Estás fuera de la mesa</span>
           <button class="btn btn-sm btn-primary" @click="run('table:sitout', { sitout: false })">Volver a jugar</button>
         </template>
-        <template v-else-if="mySeat.chips <= 0">Sin fichas · pide al dealer una recompra</template>
+        <template v-else-if="mySeat.chips <= 0 && !offline">Sin fichas · pide al dealer una recompra</template>
         <template v-else-if="live">Entrarás en la siguiente mano</template>
         <template v-else>Esperando a que el dealer reparta…</template>
       </div>
@@ -299,8 +360,14 @@ const statusLine = computed(() => {
       @close="picker.open = false"
     />
     <ShareSheet :open="showShare" :code="s.code" @close="showShare = false" />
-    <ShowdownSheet v-if="hand?.stage === 'showdown'" :open="showShowdown && s.isDealer" :state="s" :busy="busy" @close="showShowdown = false" @resolve="(w) => run('dealer:resolve', { winners: w }).then((ok) => ok && (showShowdown = false))" />
-    <TableMenu :open="showMenu" :state="s" :run="run" @close="showMenu = false" />
+    <ShowdownSheet
+      :open="showShowdown && s.isDealer && hand?.stage === 'showdown'"
+      :state="s"
+      :busy="busy"
+      @close="showShowdown = false"
+      @resolve="resolve"
+    />
+    <TableMenu :open="menu.open" :initial-tab="menu.tab" :state="s" :run="run" @close="menu.open = false" />
   </div>
   <div v-else class="loading-page"><div class="spinner"></div></div>
 </template>
@@ -312,7 +379,8 @@ const statusLine = computed(() => {
 }
 .bar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 8px; }
 .tname { font-weight: 800; font-size: 17px; }
-.sub { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
+.sub { display: flex; align-items: center; gap: 6px; color: var(--text-2); flex-wrap: wrap; }
+.mbadge { font-weight: 700; color: var(--text); }
 .dotc { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
 .dotc.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .codebtn {
@@ -329,7 +397,7 @@ const statusLine = computed(() => {
   transition: background 0.6s;
 }
 .rail { position: absolute; inset: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.08); pointer-events: none; }
-.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 0 12%; }
+.center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 0 12%; pointer-events: none; }
 .pot {
   display: flex; align-items: center; gap: 8px; padding: 5px 14px 5px 6px; border-radius: 99px;
   background: rgba(0, 0, 0, 0.45); font-weight: 800; font-size: 15px; color: #fff;
@@ -356,13 +424,23 @@ const statusLine = computed(() => {
   background: rgba(22, 31, 69, 0.85); border: 1px solid rgba(245, 181, 68, 0.25); width: 100%; max-width: 640px; margin: 0 auto;
 }
 .dl-tag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold-2); white-space: nowrap; }
+.icon-btn.big { width: 54px; height: 54px; border-radius: 16px; }
 .txt { color: var(--text); }
 .glow { animation: glow 1.8s infinite; }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 181, 68, 0.5); } 50% { box-shadow: 0 0 0 8px rgba(245, 181, 68, 0); } }
 .center { text-align: center; }
+.gameover {
+  width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; border-radius: 20px; display: flex; flex-direction: column; gap: 12px;
+  background: radial-gradient(circle at 0% 0%, rgba(245, 181, 68, 0.22), transparent 60%), rgba(22, 31, 69, 0.92);
+  border: 1px solid rgba(245, 181, 68, 0.4);
+}
+.go-head { display: flex; align-items: center; gap: 14px; }
+.go-name { font-size: 18px; }
+.go-actions { gap: 8px; }
 .player { width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
 .mine { display: flex; gap: 12px; align-items: center; }
 .hole { position: relative; display: flex; gap: 6px; padding: 0; }
+.hole.locked { cursor: default; }
 .hole .edit { position: absolute; right: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #2a1700; box-shadow: 0 3px 8px rgba(0,0,0,.5); }
 .folded-msg { color: var(--text-3); font-weight: 600; }
 .padwrap { padding: 12px 0 2px; border-top: 1px solid var(--line); }
@@ -374,10 +452,16 @@ const statusLine = computed(() => {
 .slide-leave-active { transition: transform 0.25s ease, opacity 0.2s; }
 .slide-enter-from, .slide-leave-to { transform: translateY(40px); opacity: 0; }
 
+@media (max-width: 1099px) {
+  /* en móvil la mesa nunca se aplasta: si el panel no cabe, la página hace scroll */
+  .tp { overflow-y: auto; overscroll-behavior: contain; }
+  .felt-zone { min-height: 330px; }
+  .dock { max-height: none; overflow: visible; }
+}
 @media (max-width: 700px) {
   .felt-zone { padding: 40px 34px 44px; }
   .felt { border-radius: 46% / 40%; max-height: none; }
-  .center { padding: 0 6%; }
+  .center { padding: 12% 6% 0; }
   .board { gap: 4px; }
   .board :deep(.pcard.md) { --w: 44px; }
   .codebtn { padding: 0 9px; letter-spacing: 0.06em; }
