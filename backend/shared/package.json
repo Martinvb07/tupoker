@@ -1,0 +1,5 @@
+{
+  "name": "poker-shared",
+  "private": true,
+  "type": "module"
+}

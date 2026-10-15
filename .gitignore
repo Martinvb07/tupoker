@@ -1,0 +1,28 @@
+# --- DEPENDENCIAS ---
+node_modules/
+
+# --- BUILD ---
+dist/
+/frontend/dist/
+
+# --- ARCHIVOS DE IDE & OS ---
+.idea/
+.vscode/
+.claude/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# --- SEGURIDAD ---
+**/.env
+**/.env.*
+!**/.env.example
+
+# --- LOGS / CACHÉ ---
+*.log
+.cache/
+.npm
+
+# --- FOTOS SUBIDAS POR LOS USUARIOS ---
+/backend/uploads/

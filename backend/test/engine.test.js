@@ -1,0 +1,92 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as e from '../src/game/engine.js';
+import { evaluate, chipDenominations, equity } from '../shared/poker.js';
+
+const mesa = (n, chips = []) => ({
+  status: 'waiting',
+  settings: { minBet: 20, maxBet: 0, startingChips: 1000 },
+  handNo: 0,
+  buttonUserId: null,
+  seats: Array.from({ length: n }, (_, i) => ({ userId: 'p' + i, chips: chips[i] ?? 1000, status: 'active' })),
+});
+const total = (t) => t.seats.reduce((s, x) => s + x.chips, 0);
+
+test('evaluador reconoce las jugadas', () => {
+  assert.equal(evaluate(['As', 'Ks', 'Qs', 'Js', 'Ts', '2d', '3c']).name, 'Escalera real');
+  assert.equal(evaluate(['Ah', '2d', '3c', '4s', '5h', 'Kd', 'Kc']).categoryName, 'Escalera');
+  assert.equal(evaluate(['Ah', 'Ad', 'Ac', 'Ks', 'Kh', 'Kd', '2c']).name, 'Full de Ases con Reyes');
+  assert.ok(evaluate(['As', 'Ad', 'Kc', 'Qs', '2h']).score > evaluate(['As', 'Ad', 'Kc', 'Js', '2h']).score);
+});
+
+test('equity de AA contra una mano aleatoria ronda el 85%', () => {
+  const r = equity({ hole: ['As', 'Ah'], opponents: 1, iterations: 20000 });
+  assert.ok(r.equity > 82 && r.equity < 88, `equity ${r.equity}`);
+});
+
+test('fichas salen de la mínima y la máxima', () => {
+  assert.deepEqual(chipDenominations(100, 0, 5000), [100, 500, 1000, 2500, 5000]);
+  assert.ok(chipDenominations(5000, 100000).every((v) => v >= 5000));
+});
+
+test('mano completa a 3 con showdown', () => {
+  const t = mesa(3);
+  e.startHand(t);
+  assert.equal(t.hand.toAct, 'p0');
+  e.act(t, 'p0', 'call');
+  e.act(t, 'p1', 'call');
+  e.act(t, 'p2', 'check');
+  assert.equal(t.hand.awaiting, 'flop');
+  e.setBoard(t, ['As', 'Kd', '7c']);
+  e.setHoleCards(t, 'p0', ['Ah', 'Ad']);
+  e.setHoleCards(t, 'p1', ['Kh', 'Kc']);
+  assert.throws(() => e.setHoleCards(t, 'p2', ['Ah', '2c']));
+  e.act(t, 'p1', 'raise', 50);
+  e.act(t, 'p2', 'fold');
+  e.act(t, 'p0', 'raise', 150);
+  e.act(t, 'p1', 'call');
+  e.setBoard(t, ['2h']);
+  e.act(t, 'p1', 'check');
+  e.act(t, 'p0', 'check');
+  e.setBoard(t, ['3h']);
+  e.act(t, 'p1', 'check');
+  e.act(t, 'p0', 'check');
+  assert.equal(t.hand.stage, 'showdown');
+  assert.deepEqual(t.hand.pots[0].suggested, ['p0']);
+  e.resolveShowdown(t, [['p0']]);
+  assert.deepEqual(t.seats.map((s) => s.chips), [1190, 830, 980]);
+});
+
+test('botes laterales con all-in', () => {
+  const t = mesa(3, [100, 500, 1000]);
+  e.startHand(t);
+  e.act(t, t.hand.toAct, 'allin');
+  e.act(t, t.hand.toAct, 'allin');
+  e.act(t, t.hand.toAct, 'call');
+  e.setBoard(t, ['As', 'Kd', '7c']);
+  e.setBoard(t, ['2c']);
+  e.setBoard(t, ['9d']);
+  assert.deepEqual(t.hand.pots.map((p) => p.amount), [300, 800]);
+  e.resolveShowdown(t, [['p0'], ['p2']]);
+  assert.deepEqual(t.seats.map((s) => s.chips), [300, 0, 1300]);
+  assert.equal(total(t), 1600);
+});
+
+test('heads-up: el botón pone la ciega pequeña y la subida mínima se respeta', () => {
+  const t = mesa(2);
+  e.startHand(t);
+  assert.equal(t.hand.sbId, t.hand.buttonId);
+  e.act(t, t.hand.toAct, 'fold');
+  e.startHand(t);
+  assert.throws(() => e.act(t, t.hand.toAct, 'raise', 30), /mínima/);
+  assert.equal(total(t), 2000);
+});
+
+test('la apuesta máxima limita las subidas', () => {
+  const t = mesa(2);
+  t.settings.maxBet = 100;
+  e.startHand(t);
+  assert.throws(() => e.act(t, t.hand.toAct, 'raise', 500), /máxima/);
+  e.act(t, t.hand.toAct, 'raise', 120);
+  assert.equal(t.hand.currentBet, 120);
+});
