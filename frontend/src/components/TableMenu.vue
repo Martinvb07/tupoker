@@ -8,14 +8,21 @@ import Segmented from './Segmented.vue';
 import SettingsForm from './SettingsForm.vue';
 import { formatChips, formatSigned } from '@/lib/format.js';
 
-const props = defineProps({ open: Boolean, state: Object, run: Function, initialTab: { type: String, default: 'players' } });
-const emit = defineEmits(['close']);
+const props = defineProps({
+  open: Boolean,
+  state: Object,
+  run: Function,
+  initialTab: { type: String, default: 'players' },
+  canRebuy: Boolean,
+  rebuyLabel: String,
+});
+const emit = defineEmits(['close', 'rebuy']);
 const router = useRouter();
 
 const tab = ref('players');
 const tabs = computed(() => [
   { value: 'players', label: 'Jugadores' },
-  ...(props.state.isDealer ? [{ value: 'settings', label: 'Ajustes' }] : []),
+  ...(props.state.canManage ? [{ value: 'settings', label: 'Ajustes' }] : []),
   { value: 'me', label: 'Yo' },
 ]);
 const expanded = ref(null);
@@ -36,7 +43,8 @@ async function newGame() {
   if (await props.run('dealer:resetChips')) emit('close');
 }
 
-const canAssignDealer = computed(() => props.state.isDealer || props.state.isOwner);
+const isRandom = computed(() => (props.state.settings.mode || 'live') === 'random');
+const canAssignDealer = computed(() => !isRandom.value && (props.state.isDealer || props.state.isOwner));
 const live = computed(() => props.state.hand && props.state.hand.stage !== 'done');
 const mySeat = computed(() => props.state.seats.find((s) => s.userId === props.state.me));
 
@@ -82,11 +90,11 @@ async function closeTable() {
                 <span :class="s.chips - s.buyIn >= 0 ? 'pos' : 'neg'">{{ formatSigned(s.chips - s.buyIn, formatChips) }}</span>
               </div>
             </div>
-            <Icon v-if="state.isDealer || canAssignDealer" name="right" :size="18" class="chev" />
+            <Icon v-if="state.canManage || canAssignDealer" name="right" :size="18" class="chev" />
           </button>
           <Transition name="fade">
-            <div v-if="expanded === s.userId && (state.isDealer || canAssignDealer)" class="pl-actions">
-              <template v-if="state.isDealer">
+            <div v-if="expanded === s.userId && (state.canManage || canAssignDealer)" class="pl-actions">
+              <template v-if="state.canManage">
                 <div class="row">
                   <input v-model.number="chipAmount" class="input num" type="number" min="1" style="height: 42px" />
                   <button class="btn btn-sm" @click="act('dealer:chips', { userId: s.userId, amount: chipAmount }, true)">+ Recompra</button>
@@ -100,11 +108,11 @@ async function closeTable() {
                   <button v-if="s.userId !== state.me" class="btn btn-sm btn-danger" @click="kick(s)">Expulsar</button>
                 </div>
               </template>
-              <button v-else-if="s.userId !== state.dealerId" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)">🎩 Hacer dealer</button>
+              <button v-else-if="s.userId !== state.dealerId && canAssignDealer" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)">🎩 Hacer dealer</button>
             </div>
           </Transition>
         </div>
-        <p class="hint">El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol.</p>
+        <p class="hint">{{ isRandom ? "En modo aleatorio no hay dealer: la app reparte y las manos salen solas. El anfitrión gestiona fichas y ajustes." : "El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol." }}</p>
       </div>
 
       <div v-else-if="tab === 'settings'" key="s" class="stack">
@@ -129,6 +137,11 @@ async function closeTable() {
             <b class="num" :class="mySeat.chips - mySeat.buyIn >= 0 ? 'pos' : 'neg'">{{ formatSigned(mySeat.chips - mySeat.buyIn, formatChips) }}</b>
           </div>
         </div>
+        <div v-if="mySeat && mySeat.rebuys" class="small muted">Recompras hechas: {{ mySeat.rebuys }}</div>
+        <button v-if="canRebuy" class="btn btn-primary btn-block" :disabled="!!mySeat.rebuyRequest" @click="emit('rebuy')">
+          <Icon name="coins" :size="18" />{{ mySeat.rebuyRequest ? 'Recompra pedida, esperando al dealer…' : rebuyLabel }}
+        </button>
+        <button v-if="mySeat?.rebuyRequest" class="btn btn-ghost btn-block" @click="run('table:cancelRebuy')">Cancelar petición</button>
         <button v-if="mySeat" class="btn btn-block" @click="run('table:sitout', { sitout: mySeat.status !== 'sitout' })">
           <Icon :name="mySeat.status === 'sitout' ? 'play' : 'pause'" :size="18" />
           {{ mySeat.status === 'sitout' ? 'Volver a jugar' : 'Ausentarme (no jugar las próximas manos)' }}

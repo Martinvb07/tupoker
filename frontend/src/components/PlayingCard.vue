@@ -9,6 +9,7 @@ const props = defineProps({
   placeholder: { type: Boolean, default: false },
   highlight: { type: Boolean, default: false },
   dim: { type: Boolean, default: false },
+  delay: { type: Number, default: 0 }, // segundos antes de destaparse (repartir una a una)
 });
 
 const rank = computed(() => (props.card ? (props.card[0] === 'T' ? '10' : props.card[0]) : ''));
@@ -23,7 +24,7 @@ const color = computed(() => {
 </script>
 
 <template>
-  <div class="pcard" :class="[size, { back: !card && !placeholder, ph: placeholder && !card, hl: highlight, dim }]">
+  <div class="pcard" :class="[size, { back: !card && !placeholder, ph: placeholder && !card, hl: highlight, dim }]" :style="{ '--fd': delay + 's' }">
     <Transition name="flip" mode="out-in">
       <div v-if="card" :key="card" class="face" :style="{ color }">
         <div class="corner">
@@ -103,7 +104,7 @@ const color = computed(() => {
 .pcard.hl .face { box-shadow: 0 0 0 2px var(--gold), 0 10px 24px -6px rgba(245, 181, 68, 0.55); }
 .pcard.dim { opacity: 0.4; }
 
-.flip-enter-active { transition: transform 0.45s var(--spring), opacity 0.2s; }
+.flip-enter-active { transition: transform 0.45s var(--spring) var(--fd, 0s), opacity 0.2s var(--fd, 0s); }
 .flip-leave-active { transition: transform 0.15s ease-in, opacity 0.15s; }
 .flip-enter-from { transform: rotateY(90deg) scale(0.9); opacity: 0; }
 .flip-leave-to { transform: rotateY(-90deg); opacity: 0; }

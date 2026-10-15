@@ -148,3 +148,16 @@ test('nueva partida devuelve las fichas iniciales', () => {
   e.resetChips(t);
   assert.deepEqual(t.seats.map((s) => s.chips), [1000, 1000]);
 });
+
+test('recompra: solo fuera de una mano viva y suma las fichas iniciales', () => {
+  const t = mesa(2, [1000, 0]);
+  e.applyRebuy(t, 'p1');
+  assert.equal(t.seats[1].chips, 1000);
+  assert.equal(t.seats[1].rebuys, 1);
+  e.startHand(t);
+  assert.throws(() => e.applyRebuy(t, 'p0'), /termine la mano/);
+  e.act(t, t.hand.toAct, 'fold');
+  e.applyRebuy(t, 'p0');
+  t.settings.mode = 'offline';
+  assert.throws(() => e.checkRebuy(t, 'p0'), /sin dinero/);
+});

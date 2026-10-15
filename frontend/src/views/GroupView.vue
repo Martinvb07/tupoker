@@ -114,10 +114,16 @@ async function regenerate() {
   toast.success('Nuevo código generado');
 }
 async function removeGroup() {
-  if (!confirm('¿Eliminar el grupo? El historial de manos se conserva en el ranking general.')) return;
-  await api.del(`/groups/${id.value}`);
-  router.replace('/grupos');
+  if (!confirm(`¿Eliminar "${g.value.name}"? Se cierra su mesa y desaparece para todos. Las manos jugadas siguen contando en el ranking general.`)) return;
+  try {
+    await api.del(`/groups/${id.value}`);
+    toast.success('Grupo eliminado');
+    router.replace('/grupos');
+  } catch (e) {
+    toast.error(e.message);
+  }
 }
+const isOwner = computed(() => g.value?.ownerId === auth.user.id);
 </script>
 
 <template>
@@ -132,7 +138,11 @@ async function removeGroup() {
           <span v-if="g.members.length > 8" class="small muted more">+{{ g.members.length - 8 }}</span>
         </div>
       </div>
-      <button class="btn btn-sm" @click="showInvite = true"><Icon name="share" :size="16" />Invitar</button>
+      <div class="row head-actions">
+        <button class="btn btn-sm" @click="showInvite = true"><Icon name="share" :size="16" />Invitar</button>
+        <button v-if="isOwner" class="btn btn-sm btn-danger" title="Eliminar grupo" @click="removeGroup"><Icon name="trash" :size="16" />Eliminar</button>
+        <button v-else class="btn btn-sm btn-ghost" title="Salir del grupo" @click="removeMember({ id: auth.user.id })"><Icon name="logout" :size="16" />Salir</button>
+      </div>
     </div>
 
     <Segmented v-model="tab" :options="tabs" scroll class="tabs rise rise-1" />
@@ -264,6 +274,7 @@ async function removeGroup() {
 .face { margin-left: -6px; box-shadow: 0 0 0 2px var(--surface); }
 .face:first-child { margin-left: 0; }
 .more { margin-left: 8px; }
+.head-actions { gap: 8px; flex-wrap: wrap; }
 .tabs { margin: 18px 0; }
 .tablecard { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; background: radial-gradient(ellipse at 0% 50%, color-mix(in srgb, var(--felt-a) 45%, transparent), transparent 70%), var(--surface); }
 .tablecard.live { border-color: rgba(34, 197, 94, 0.45); }

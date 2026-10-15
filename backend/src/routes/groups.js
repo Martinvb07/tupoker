@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { Group, Hand, Table, User } from '../models.js';
 import { ah, HttpError, requireAuth } from '../auth.js';
 import { randomCode, getTable } from '../game/manager.js';
-import { cleanSettings, createTable, seatFor } from './tables.js';
+import { cleanSettings, createTable, seatFor, closeTableNow } from './tables.js';
+import { commit } from '../game/autopilot.js';
 import { userRanking, userStats } from '../stats.js';
 import { notifyUser } from '../hub.js';
 
@@ -166,6 +167,14 @@ r.delete('/:id/members/:userId', ah(async (req, res) => {
 r.delete('/:id', ah(async (req, res) => {
   const { g } = await loadGroup(req, { admin: true });
   if (g.ownerId.toString() !== req.userId) throw new HttpError(403, 'Solo el creador puede eliminar el grupo');
+  // cierra la mesa del grupo si estaba abierta
+  if (g.activeTableCode) {
+    const t = await getTable(g.activeTableCode);
+    if (t && t.status !== 'closed') {
+      await closeTableNow(t);
+      commit(t);
+    }
+  }
   await g.deleteOne();
   res.json({ ok: true });
 }));

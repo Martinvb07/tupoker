@@ -14,6 +14,8 @@ const props = defineProps({
   handName: String,
   betDir: { type: Object, default: () => ({ x: 0, y: -1 }) },
   mode: { type: String, default: 'live' },
+  secondsLeft: { type: Number, default: 0 }, // tiempo de turno (modo aleatorio)
+  betReach: { type: Number, default: 1 }, // distancia de la ficha de apuesta al asiento
 });
 
 const turn = computed(() => props.hand?.toAct === props.seat.userId);
@@ -52,7 +54,8 @@ const lastLabel = computed(() => {
       <PlayingCard :card="player.cards?.[1] || ''" size="xs" />
     </div>
     <div class="ava-wrap">
-      <svg v-if="turn" class="timer" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" /></svg>
+      <svg v-if="turn" class="timer" :class="{ low: secondsLeft && secondsLeft <= 10 }" viewBox="0 0 100 100"><circle cx="50" cy="50" r="47" /></svg>
+      <span v-if="turn && secondsLeft" class="secs num" :class="{ low: secondsLeft <= 10 }">{{ secondsLeft }}</span>
       <Avatar :user="seat" :size="48" />
       <span v-if="badge" class="btn-badge">D</span>
       <span v-if="isDealer" class="dealer-badge" title="Dealer">🎩</span>
@@ -72,7 +75,7 @@ const lastLabel = computed(() => {
       <div
         v-if="player?.bet > 0"
         class="bet"
-        :style="{ '--bx': betDir.x * 72 + 'px', '--by': betDir.y * (betDir.y > 0 ? 92 : 70) + 'px' }"
+        :style="{ '--bx': betDir.x * 72 * betReach + 'px', '--by': betDir.y * (betDir.y > 0 ? 92 : 70) * betReach + 'px' }"
       >
         <Chip :value="player.bet" :index="0" :size="22" />
         <span class="num">{{ formatChips(player.bet) }}</span>
@@ -95,6 +98,12 @@ const lastLabel = computed(() => {
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 181, 68, 0.55); } 100% { box-shadow: 0 0 0 14px rgba(245, 181, 68, 0); } }
 .timer { position: absolute; inset: -5px; width: calc(100% + 10px); height: calc(100% + 10px); transform: rotate(-90deg); }
 .timer circle { fill: none; stroke: #fff; stroke-width: 3; stroke-dasharray: 296; animation: dash 2.4s linear infinite; opacity: 0.7; }
+.timer.low circle { stroke: #fb7185; opacity: 1; }
+.secs {
+  position: absolute; left: -10px; bottom: -4px; z-index: 3; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 99px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 900; background: var(--gold); color: #2a1700; box-shadow: 0 2px 6px rgba(0,0,0,.5);
+}
+.secs.low { background: #f43f5e; color: #fff; }
 @keyframes dash { from { stroke-dashoffset: 296; } to { stroke-dashoffset: -296; } }
 .won .ava-wrap { background: linear-gradient(135deg, #4ade80, #16a34a); animation: winpop 0.8s var(--spring); }
 @keyframes winpop { 0% { transform: scale(1); } 40% { transform: scale(1.18); } 100% { transform: scale(1); } }

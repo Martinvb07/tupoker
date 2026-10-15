@@ -7,6 +7,7 @@ const props = defineProps({
   board: { type: Array, default: () => [] },
   opponents: { type: Number, default: 1 },
   compact: Boolean,
+  mini: Boolean, // móvil en tu turno: solo jugada, % y barra
 });
 
 const result = ref(null);
@@ -56,7 +57,7 @@ const tone = computed(() => {
 </script>
 
 <template>
-  <div class="eq" :class="[tone, { compact }]">
+  <div class="eq" :class="[tone, { compact, mini }]">
     <div class="top">
       <div class="grow">
         <div class="lbl">Tu jugada</div>
@@ -72,7 +73,7 @@ const tone = computed(() => {
         <div class="w" :style="{ width: result.win + '%' }"></div>
         <div class="t" :style="{ width: result.tie + '%' }"></div>
       </div>
-      <div class="legend small">
+      <div v-if="!mini" class="legend small">
         <span><i class="dot w"></i>Gana {{ result.win.toFixed(1) }}%</span>
         <span><i class="dot t"></i>Empata {{ result.tie.toFixed(1) }}%</span>
         <span class="faint">vs {{ opponents }} rival{{ opponents > 1 ? 'es' : '' }}</span>
@@ -120,4 +121,9 @@ const tone = computed(() => {
 .ol b { text-align: right; color: var(--text); }
 .compact .hand { font-size: 14px; }
 .compact .pct { font-size: 24px; }
+.mini { padding: 8px 12px; }
+.mini .lbl { display: none; }
+.mini .hand { font-size: 13.5px; }
+.mini .pct { font-size: 22px; }
+.mini .bar { margin: 6px 0 0; height: 5px; }
 </style>

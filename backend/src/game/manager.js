@@ -126,7 +126,13 @@ export function markOnline(code, userId, delta) {
   if (n <= 0) m.delete(userId);
   else m.set(userId, n);
 }
-const isOnline = (code, userId) => !!presence.get(code)?.get(userId);
+export const isOnline = (code, userId) => !!presence.get(code)?.get(userId);
+
+/** Quién gestiona la mesa: el dealer; en modo aleatorio (sin dealer) también el anfitrión. */
+export function canManage(table, userId) {
+  if (table.dealerId === userId) return true;
+  return (table.settings?.mode || 'live') === 'random' && table.ownerId === userId;
+}
 
 // ---------------- Vista por usuario ----------------
 
@@ -143,6 +149,9 @@ export function viewFor(table, userId) {
     dealerId: table.dealerId,
     isDealer,
     isOwner: table.ownerId === userId,
+    canManage: canManage(table, userId),
+    serverNow: Date.now(),
+    nextHandAt: table.nextHandAt || null,
     me: userId,
     status: table.status,
     settings: table.settings,
@@ -164,6 +173,7 @@ export function viewFor(table, userId) {
           currentBet: hand.currentBet,
           minRaise: hand.minRaise,
           toAct: hand.toAct,
+          turnDeadline: hand.turnDeadline || null,
           pots: hand.pots,
           result: hand.result,
           handNames: reveal ? hand.handNames || {} : {},

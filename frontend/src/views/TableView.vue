@@ -7,6 +7,7 @@ import { formatChips, STAGE_LABEL, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Seat from '@/components/Seat.vue';
 import Avatar from '@/components/Avatar.vue';
+import Chip from '@/components/Chip.vue';
 import PlayingCard from '@/components/PlayingCard.vue';
 import CardPicker from '@/components/CardPicker.vue';
 import ChipBetPad from '@/components/ChipBetPad.vue';
@@ -26,12 +27,26 @@ const menu = ref({ open: false, tab: 'players' });
 const showShowdown = ref(false);
 const picker = ref({ open: false, mode: null });
 
+// ---------- reloj (cuentas atrás sincronizadas con el servidor) ----------
+const now = ref(Date.now());
+let clockOffset = 0;
+let tick;
+const serverNow = computed(() => now.value + clockOffset);
+const secondsTo = (ts) => (ts ? Math.max(0, Math.ceil((ts - serverNow.value) / 1000)) : 0);
+
+// ---------- móvil ----------
+const mq = window.matchMedia('(max-width: 700px)');
+const isMobile = ref(mq.matches);
+const onMq = (e) => (isMobile.value = e.matches);
+
 const hand = computed(() => s.value?.hand);
 const live = computed(() => !!hand.value && hand.value.stage !== 'done');
 // el modo de la mano en curso manda; entre manos, el de la mesa
 const mode = computed(() => (live.value ? hand.value.mode : s.value?.settings.mode) || 'live');
 const offline = computed(() => mode.value === 'offline');
 const random = computed(() => mode.value === 'random');
+const manager = computed(() => !!s.value?.canManage);
+const showDealerBar = computed(() => manager.value && !random.value);
 const me = computed(() => hand.value?.players.find((p) => p.userId === s.value.me) || null);
 const mySeat = computed(() => s.value?.seats.find((x) => x.userId === s.value.me));
 const myTurn = computed(() => !!s.value?.legal);
@@ -41,43 +56,107 @@ const nameOf = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displa
 const opponents = computed(() => (hand.value ? hand.value.players.filter((p) => !p.folded && p.userId !== s.value.me).length : 0));
 const totalPot = computed(() => (hand.value ? hand.value.players.reduce((a, p) => a + p.total, 0) : 0));
 
-// asientos alrededor de la mesa, conmigo abajo
+// ---------- cartas comunes una a una ----------
+const shown = ref(0);
+let lastHandNo = null;
+let revealTimer = null;
+function revealStep() {
+  if (revealTimer) return;
+  const len = hand.value?.board.length || 0;
+  if (shown.value >= len) return;
+  const next = shown.value + 1;
+  // all-in: pausa larga entre calles; si no, cada carta del flop sale seguida
+  const runout = len - shown.value > 1 && next > 3;
+  const delay = runout ? 1300 : next <= 3 ? (next === 1 ? 120 : 420) : 200;
+  revealTimer = setTimeout(() => {
+    revealTimer = null;
+    shown.value = next;
+    revealStep();
+  }, delay);
+}
+watch(
+  () => [hand.value?.no, hand.value?.board.length],
+  () => {
+    const h = hand.value;
+    const len = h?.board.length || 0;
+    if (!h) {
+      shown.value = 0;
+      return;
+    }
+    if (lastHandNo === null) shown.value = len; // al entrar a media mano no se anima
+    else if (h.no !== lastHandNo || len < shown.value) shown.value = Math.min(len, h.no !== lastHandNo ? 0 : len);
+    lastHandNo = h.no;
+    revealStep();
+  },
+);
+const revealing = computed(() => !!hand.value && shown.value < hand.value.board.length);
+// lo que se pinta en la mesa mientras se destapan cartas (resultados ocultos hasta el final)
+const view = computed(() => {
+  const h = hand.value;
+  if (!h || !revealing.value) return h;
+  const done = h.stage === 'done';
+  return {
+    ...h,
+    board: h.board.slice(0, shown.value),
+    stage: done ? 'showdown' : h.stage,
+    result: done ? null : h.result,
+    handNames: {},
+    players: done ? h.players.map((p) => ({ ...p, stack: p.stack - (p.won || 0), won: 0 })) : h.players,
+  };
+});
+
+// ---------- asientos ----------
 const layout = computed(() => {
   if (!s.value) return [];
   const seats = [...s.value.seats];
   const myIdx = seats.findIndex((x) => x.userId === s.value.me);
   const ordered = myIdx >= 0 ? [...seats.slice(myIdx), ...seats.slice(0, myIdx)] : seats;
-  const n = ordered.length;
-  return ordered.map((seat, i) => {
-    const a = Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pos = (seat, a, rx = 47, ry = 45) => {
     const cos = Math.cos(a), sin = Math.sin(a);
-    return { seat, x: 50 + cos * 47, y: 50 + sin * 45, dir: { x: -cos, y: -sin } };
-  });
+    return { seat, x: 50 + cos * rx, y: 50 + sin * ry, dir: { x: -cos, y: -sin } };
+  };
+  if (isMobile.value && myIdx >= 0) {
+    // en móvil tu info va en el panel de abajo: los rivales se reparten por arriba
+    const others = ordered.slice(1);
+    const n = others.length;
+    return others.map((seat, i) => pos(seat, Math.PI + ((i + 1) * Math.PI) / (n + 1), 44, 50));
+  }
+  const n = ordered.length;
+  return ordered.map((seat, i) => pos(seat, Math.PI / 2 + (i * 2 * Math.PI) / n));
 });
 
-const handNames = computed(() => hand.value?.handNames || {});
+const handNames = computed(() => view.value?.handNames || {});
 const winnerText = computed(() => {
-  const h = hand.value;
+  const h = view.value;
   const r = h?.result;
   if (!r || h.stage !== 'done') return '';
   if (h.mode === 'offline') {
     return r.winners.map((id) => `${nameOf(id)} ${id === s.value.me ? 'ganas' : 'gana'}${handNames.value[id] ? ' con ' + handNames.value[id] : ''}`).join(' · ');
   }
-  const ws = Object.entries(r.payout).filter(([, v]) => v > 0);
-  return ws
+  return Object.entries(r.payout)
+    .filter(([, v]) => v > 0)
     .map(([id, v]) => `${nameOf(id)} ${id === s.value.me ? 'ganas' : 'gana'} ${formatChips(v)}${handNames.value[id] ? ' con ' + handNames.value[id] : ''}`)
     .join(' · ');
 });
 
-// ---------- partida terminada (alguien se quedó con todas las fichas) ----------
+// ---------- partida terminada / recompras ----------
 const activeSeats = computed(() => (s.value?.seats || []).filter((x) => x.status === 'active'));
 const withChips = computed(() => activeSeats.value.filter((x) => x.chips > 0));
-const gameOver = computed(() => !!s.value && !offline.value && !live.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
+const gameOver = computed(() => !!s.value && !offline.value && !live.value && !revealing.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
 const champion = computed(() => (gameOver.value && withChips.value.length === 1 ? withChips.value[0] : null));
 const canStart = computed(() => {
-  if (!s.value?.isDealer || live.value) return false;
+  if (live.value) return false;
+  if (!manager.value && !(random.value && mySeat.value)) return false;
   return (offline.value ? activeSeats.value.length : withChips.value.length) >= 2;
 });
+const rebuyRequests = computed(() => (manager.value && !random.value ? (s.value?.seats || []).filter((x) => x.rebuyRequest) : []));
+const canRebuy = computed(() => !!mySeat.value && !offline.value && (!me.value || me.value.folded || !live.value));
+const rebuyLabel = computed(() =>
+  random.value || manager.value ? `Recomprar ${formatChips(s.value.settings.startingChips)}` : `Pedir recompra de ${formatChips(s.value.settings.startingChips)}`,
+);
+async function rebuy() {
+  if (await run('table:rebuy')) toast.success(random.value || manager.value ? 'Fichas añadidas' : 'Recompra pedida al dealer');
+}
 
 // ---------- socket ----------
 let sock;
@@ -95,10 +174,11 @@ async function subscribe() {
 function onState(st) {
   if (st.code !== code.value) return;
   const wasMyTurn = myTurn.value;
+  clockOffset = st.serverNow - Date.now();
   s.value = st;
   if (st.legal && !wasMyTurn) navigator.vibrate?.([30, 40, 30]);
   if (st.status === 'closed') {
-    toast('El dealer cerró la mesa');
+    toast('La mesa se ha cerrado');
     closeOverlays();
     router.replace('/');
   }
@@ -121,12 +201,17 @@ onMounted(() => {
   sock.on('table:kicked', onKicked);
   sock.on('connect', subscribe);
   if (sock.connected) subscribe();
+  tick = setInterval(() => (now.value = Date.now()), 250);
+  mq.addEventListener('change', onMq);
 });
 onUnmounted(() => {
   sock.off('table:state', onState);
   sock.off('table:kicked', onKicked);
   sock.off('connect', subscribe);
   sock.emit('table:unsubscribe', { code: code.value });
+  clearInterval(tick);
+  clearTimeout(revealTimer);
+  mq.removeEventListener('change', onMq);
   document.body.style.overflow = '';
 });
 
@@ -174,18 +259,17 @@ const openPicker = (m) => {
   picker.value = { open: true, mode: m };
 };
 
-// el dealer abre el selector directamente cuando toca poner cartas (no en aleatorio, que reparte la app)
 watch(
   () => hand.value?.awaiting,
   (aw) => {
-    if (aw && s.value?.isDealer && !random.value && !offline.value) setTimeout(() => openPicker('board'), 450);
+    if (aw && manager.value && !random.value && !offline.value) setTimeout(() => openPicker('board'), 450);
     if (!aw && picker.value.mode === 'board') picker.value.open = false;
   },
 );
 watch(
   () => hand.value?.stage,
   (st) => {
-    if (st === 'showdown' && s.value?.isDealer) showShowdown.value = true;
+    if (st === 'showdown' && manager.value && !random.value) showShowdown.value = true;
     if (st !== 'showdown') showShowdown.value = false;
     if (st === 'preflop' && me.value && !myCards.value.length && !random.value) {
       toast('Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
@@ -193,24 +277,40 @@ watch(
   },
 );
 
-const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => hand.value?.board[i] || ''));
+const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => view.value?.board[i] || ''));
 const toActName = computed(() => (hand.value?.toAct ? nameOf(hand.value.toAct) : ''));
+const turnLeft = computed(() => secondsTo(hand.value?.turnDeadline));
+const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
 const statusLine = computed(() => {
-  const h = hand.value;
+  const h = view.value;
   if (!s.value) return '';
+  if (revealing.value) return 'Repartiendo cartas…';
   if (gameOver.value) return champion.value ? `🏆 ${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
-  if (!h || h.stage === 'done') return s.value.isDealer ? 'Listo para repartir' : 'Esperando al dealer';
+  if (!h || h.stage === 'done') {
+    if (random.value) return nextHandIn.value ? `Siguiente mano en ${nextHandIn.value}s` : 'Esperando jugadores';
+    return manager.value ? 'Listo para repartir' : 'Esperando al dealer';
+  }
   if (h.awaiting) return `El dealer pone el ${STAGE_LABEL[h.awaiting]}`;
   if (h.stage === 'showdown') return offline.value ? 'Showdown: el dealer confirma quién gana' : 'Showdown: el dealer reparte el bote';
-  if (h.toAct === s.value.me) return '¡Es tu turno!';
-  if (h.toAct) return `Turno de ${toActName.value}`;
+  const t = random.value && turnLeft.value ? ` · ${turnLeft.value}s` : '';
+  if (h.toAct === s.value.me) return `¡Es tu turno!${t}`;
+  if (h.toAct) return `Turno de ${toActName.value}${t}`;
   return STAGE_LABEL[h.stage];
 });
 const info = computed(() => modeInfo(mode.value));
+const myView = computed(() => view.value?.players.find((p) => p.userId === s.value?.me) || null);
+const myBadge = computed(() => {
+  const h = view.value;
+  if (!h || !myView.value) return '';
+  if (h.buttonId === s.value.me) return 'D';
+  if (h.stage === 'preflop' && h.sbId === s.value.me) return 'SB';
+  if (h.stage === 'preflop' && h.bbId === s.value.me) return 'BB';
+  return '';
+});
 </script>
 
 <template>
-  <div class="tp" v-if="s">
+  <div class="tp" :class="{ turn: myTurn && !offline, mobile: isMobile }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -219,7 +319,7 @@ const info = computed(() => modeInfo(mode.value));
         <div class="sub small">
           <span class="dotc" :class="{ on: connected }"></span>
           <span class="mbadge">{{ info.icon }} {{ info.short }}</span>
-          <template v-if="hand">· Mano #{{ hand.no }}</template>
+          <template v-if="hand">· #{{ hand.no }}</template>
           <template v-if="!offline">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
@@ -238,10 +338,10 @@ const info = computed(() => modeInfo(mode.value));
             </div>
           </Transition>
           <div class="board">
-            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" size="md" class="bslot"><span></span></PlayingCard>
+            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" :size="isMobile && myTurn ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
           </div>
           <Transition name="fade" mode="out-in">
-            <div :key="statusLine + winnerText" class="status" :class="{ mine: myTurn, win: winnerText || gameOver }">
+            <div :key="statusLine.replace(/\d+s$/, '') + winnerText" class="status" :class="{ mine: myTurn, win: winnerText || gameOver }">
               {{ winnerText || statusLine }}
             </div>
           </Transition>
@@ -250,13 +350,15 @@ const info = computed(() => modeInfo(mode.value));
         <div v-for="l in layout" :key="l.seat.userId" class="seat-pos" :style="{ left: l.x + '%', top: l.y + '%' }">
           <Seat
             :seat="l.seat"
-            :player="hand?.players.find((p) => p.userId === l.seat.userId)"
-            :hand="hand"
+            :player="view?.players.find((p) => p.userId === l.seat.userId)"
+            :hand="view"
             :mode="mode"
             :is-me="l.seat.userId === s.me"
-            :is-dealer="l.seat.userId === s.dealerId"
+            :is-dealer="!random && l.seat.userId === s.dealerId"
             :hand-name="handNames[l.seat.userId]"
             :bet-dir="l.dir"
+            :seconds-left="random && hand?.toAct === l.seat.userId ? turnLeft : 0"
+            :bet-reach="isMobile ? 0.68 : 1"
           />
         </div>
       </div>
@@ -264,30 +366,50 @@ const info = computed(() => modeInfo(mode.value));
 
     <!-- dock inferior -->
     <section class="dock">
+      <!-- en móvil, tu asiento vive aquí -->
+      <div v-if="isMobile && mySeat" class="mebar">
+        <Avatar :user="mySeat" :size="28" />
+        <b class="num">{{ offline ? 'Tú' : formatChips(myView ? myView.stack : mySeat.chips) }}</b>
+        <span v-if="myBadge" class="mb-badge">{{ myBadge }}</span>
+        <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
+        <span v-if="!random && s.dealerId === s.me" class="mb-dealer">🎩 Dealer</span>
+        <span class="grow"></span>
+        <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
+      </div>
+
       <!-- partida terminada -->
       <Transition name="slide">
         <div v-if="gameOver" class="gameover">
           <div class="go-head">
-            <Avatar v-if="champion" :user="champion" :size="52" ring />
+            <Avatar v-if="champion" :user="champion" :size="48" ring />
             <div class="grow">
               <div class="eyebrow">Partida terminada</div>
               <b class="go-name">{{ champion ? `${nameOf(champion.userId)} se queda con todo` : 'Nadie más tiene fichas' }}</b>
-              <div v-if="champion" class="small muted num">{{ formatChips(champion.chips) }} fichas</div>
             </div>
           </div>
-          <template v-if="s.isDealer">
-            <div class="row go-actions">
-              <button class="btn btn-primary btn-lg grow" :disabled="busy" @click="newGame"><Icon name="rotate" :size="18" />Nueva partida</button>
-              <button class="btn btn-lg" @click="openMenu('players')"><Icon name="coins" :size="18" />Recompras</button>
-            </div>
-            <p class="hint">"Nueva partida" devuelve a todos {{ formatChips(s.settings.startingChips) }} fichas. Con "Recompras" das fichas solo a algunos.</p>
-          </template>
-          <p v-else class="hint">Espera a que el dealer empiece una nueva partida o te haga una recompra.</p>
+          <div class="row go-actions">
+            <button v-if="manager" class="btn btn-primary grow" :disabled="busy" @click="newGame"><Icon name="rotate" :size="18" />Nueva partida</button>
+            <button v-if="canRebuy && mySeat.chips <= 0" class="btn grow" :class="{ 'btn-primary': !manager }" :disabled="busy || !!mySeat.rebuyRequest" @click="rebuy">
+              <Icon name="coins" :size="18" />{{ mySeat.rebuyRequest ? 'Recompra pedida' : rebuyLabel }}
+            </button>
+            <button v-if="manager && !random" class="btn" @click="openMenu('players')"><Icon name="users" :size="18" /></button>
+          </div>
+          <p class="hint">"Nueva partida" devuelve a todos {{ formatChips(s.settings.startingChips) }} fichas. Con recompra entra quien quiera seguir.</p>
         </div>
       </Transition>
 
-      <!-- controles del dealer -->
-      <div v-if="s.isDealer && !gameOver && !myTurn" class="dealer">
+      <!-- recompras pendientes (dealer) -->
+      <TransitionGroup name="list" tag="div" class="requests" v-if="rebuyRequests.length">
+        <div v-for="r in rebuyRequests" :key="r.userId" class="req">
+          <Avatar :user="r" :size="30" />
+          <span class="grow small"><b>{{ r.displayName }}</b> pide recompra de <b class="num">{{ formatChips(r.rebuyRequest.amount) }}</b></span>
+          <button class="icon-btn ok" :disabled="busy" aria-label="Aprobar" @click="run('dealer:rebuy', { userId: r.userId, approve: true })"><Icon name="check" :size="18" /></button>
+          <button class="icon-btn" :disabled="busy" aria-label="Rechazar" @click="run('dealer:rebuy', { userId: r.userId, approve: false })"><Icon name="x" :size="18" /></button>
+        </div>
+      </TransitionGroup>
+
+      <!-- controles del dealer (en vivo / sin dinero) -->
+      <div v-if="showDealerBar && !gameOver && !myTurn" class="dealer">
         <div class="dl-tag"><span>🎩</span> Dealer</div>
         <template v-if="!live">
           <button class="btn btn-primary btn-lg grow" :disabled="!canStart || busy" @click="run('dealer:start')">
@@ -295,7 +417,7 @@ const info = computed(() => modeInfo(mode.value));
           </button>
           <button class="icon-btn big" title="Ajustes de la mesa" @click="openMenu('settings')"><Icon name="settings" /></button>
         </template>
-        <template v-else-if="hand.awaiting && !random">
+        <template v-else-if="hand.awaiting">
           <button class="btn btn-primary btn-lg grow glow" @click="openPicker('board')">
             <Icon name="cards" :size="18" />Poner el {{ STAGE_LABEL[hand.awaiting] }}
           </button>
@@ -309,42 +431,57 @@ const info = computed(() => modeInfo(mode.value));
         <template v-else>
           <div class="grow small muted">Turno de <b class="txt">{{ toActName }}</b></div>
           <button v-if="hand.toAct && hand.toAct !== s.me" class="btn btn-sm" :disabled="busy" @click="run('dealer:forceFold', { userId: hand.toAct })">Forzar</button>
-          <button v-if="hand.stage !== 'preflop' && !random" class="btn btn-sm btn-ghost" :disabled="busy" title="Corregir cartas" @click="run('dealer:undoBoard')"><Icon name="undo" :size="16" /></button>
+          <button v-if="hand.stage !== 'preflop'" class="btn btn-sm btn-ghost" :disabled="busy" title="Corregir cartas" @click="run('dealer:undoBoard')"><Icon name="undo" :size="16" /></button>
         </template>
       </div>
-      <p v-if="s.isDealer && !canStart && !live && !gameOver" class="hint center">
+      <p v-if="showDealerBar && !canStart && !live && !gameOver" class="hint center">
         {{ offline ? 'Se necesitan al menos 2 jugadores activos.' : 'Se necesitan al menos 2 jugadores activos con fichas.' }}
       </p>
+
+      <!-- modo aleatorio: sin dealer, las manos salen solas -->
+      <div v-if="random && !live && !gameOver && !revealing" class="autobar">
+        <template v-if="nextHandIn">
+          <div class="countdown num">{{ nextHandIn }}</div>
+          <span class="grow">Siguiente mano en {{ nextHandIn }}s</span>
+        </template>
+        <template v-else>
+          <span class="grow small muted">{{ canStart ? 'Las manos se reparten solas. ¡Empezad cuando estéis!' : 'Esperando a que haya 2 jugadores conectados con fichas' }}</span>
+          <button class="btn btn-primary" :disabled="!canStart || busy" @click="run('dealer:start')"><Icon name="play" :size="16" />Repartir</button>
+        </template>
+        <button v-if="manager" class="icon-btn" title="Ajustes de la mesa" @click="openMenu('settings')"><Icon name="settings" :size="18" /></button>
+      </div>
 
       <!-- jugador -->
       <div v-if="me && live" class="player">
         <div class="mine">
           <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
-            <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? 'md' : 'lg'" :dim="me.folded">?</PlayingCard>
-            <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? 'md' : 'lg'" :dim="me.folded">?</PlayingCard>
+            <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded">?</PlayingCard>
+            <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded" :delay="0.28">?</PlayingCard>
             <span v-if="!random" class="edit"><Icon name="edit" :size="13" /></span>
           </button>
-          <EquityPanel v-if="!me.folded" class="grow" :hole="myCards" :board="hand.board" :opponents="opponents" :compact="myTurn" />
+          <EquityPanel v-if="!me.folded" class="grow" :hole="myCards" :board="view.board" :opponents="opponents" :compact="myTurn" :mini="myTurn && isMobile" />
           <div v-else class="grow folded-msg">Te has retirado de esta mano</div>
         </div>
         <button v-if="offline && !me.folded && hand.stage !== 'showdown'" class="btn btn-danger btn-block" :disabled="busy" @click="run('table:fold')">Retirarme de esta mano</button>
         <Transition name="slide">
           <div v-if="myTurn && !offline" class="padwrap">
-            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" @action="doAction" />
+            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="isMobile" @action="doAction" />
           </div>
         </Transition>
       </div>
-      <div v-else-if="mySeat && !s.isDealer && !gameOver" class="waiting">
+      <div v-else-if="mySeat && !gameOver && !(showDealerBar && !(mySeat.status === 'sitout' && !live))" class="waiting">
         <template v-if="mySeat.status === 'sitout'">
-          <span>Estás fuera de la mesa</span>
+          <span>{{ mySeat.timeouts >= 2 ? 'Te sentamos fuera por inactividad' : 'Estás fuera de la mesa' }}</span>
           <button class="btn btn-sm btn-primary" @click="run('table:sitout', { sitout: false })">Volver a jugar</button>
         </template>
-        <template v-else-if="mySeat.chips <= 0 && !offline">Sin fichas · pide al dealer una recompra</template>
+        <template v-else-if="mySeat.chips <= 0 && !offline">
+          <span>Te quedaste sin fichas</span>
+          <button class="btn btn-sm btn-primary" :disabled="busy || !!mySeat.rebuyRequest" @click="rebuy">
+            {{ mySeat.rebuyRequest ? 'Recompra pedida…' : rebuyLabel }}
+          </button>
+        </template>
         <template v-else-if="live">Entrarás en la siguiente mano</template>
-        <template v-else>Esperando a que el dealer reparta…</template>
-      </div>
-      <div v-else-if="mySeat && s.isDealer && mySeat.status === 'sitout' && !live" class="waiting small">
-        Solo repartes. <button class="linkbtn" @click="run('table:sitout', { sitout: false })">Jugar también</button>
+        <template v-else-if="!random">Esperando a que el dealer reparta…</template>
       </div>
     </section>
 
@@ -361,13 +498,13 @@ const info = computed(() => modeInfo(mode.value));
     />
     <ShareSheet :open="showShare" :code="s.code" @close="showShare = false" />
     <ShowdownSheet
-      :open="showShowdown && s.isDealer && hand?.stage === 'showdown'"
+      :open="showShowdown && manager && hand?.stage === 'showdown'"
       :state="s"
       :busy="busy"
       @close="showShowdown = false"
       @resolve="resolve"
     />
-    <TableMenu :open="menu.open" :initial-tab="menu.tab" :state="s" :run="run" @close="menu.open = false" />
+    <TableMenu :open="menu.open" :initial-tab="menu.tab" :state="s" :run="run" :can-rebuy="canRebuy" :rebuy-label="rebuyLabel" @rebuy="rebuy" @close="menu.open = false" />
   </div>
   <div v-else class="loading-page"><div class="spinner"></div></div>
 </template>
@@ -388,7 +525,7 @@ const info = computed(() => modeInfo(mode.value));
   font-weight: 900; letter-spacing: 0.12em; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px solid rgba(245, 181, 68, 0.35);
 }
 
-.felt-zone { flex: 1; min-height: 0; display: grid; place-items: center; padding: 34px 40px 40px; }
+.felt-zone { flex: 1; min-height: 0; display: grid; place-items: center; padding: 34px 40px 40px; transition: padding 0.4s var(--ease); }
 .felt {
   position: relative; width: 100%; height: 100%; max-width: 1000px; max-height: 560px;
   border-radius: 50%;
@@ -417,54 +554,83 @@ const info = computed(() => modeInfo(mode.value));
 .dock {
   flex: none; padding: 10px 14px calc(12px + var(--safe-b)); display: flex; flex-direction: column; gap: 10px;
   background: linear-gradient(180deg, rgba(11, 16, 38, 0), rgba(11, 16, 38, 0.95) 22%);
-  max-height: 64dvh; overflow-y: auto;
+  max-height: 70dvh; overflow-y: auto;
 }
+.dock > * { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
+.mebar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 14px;
+  background: rgba(22, 31, 69, 0.85); border: 1px solid rgba(245, 181, 68, 0.3);
+}
+.mebar b { color: var(--gold-2); font-size: 15px; }
+.mb-badge { min-width: 24px; height: 22px; padding: 0 6px; border-radius: 99px; background: #fff; color: #111; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
+.mb-bet { display: flex; align-items: center; gap: 4px; font-weight: 800; font-size: 13px; padding: 2px 8px 2px 2px; border-radius: 99px; background: rgba(0, 0, 0, 0.4); }
+.mb-dealer { font-size: 12px; font-weight: 700; color: var(--gold-2); }
+.mb-timer { font-weight: 900; padding: 2px 10px; border-radius: 99px; background: rgba(245, 181, 68, 0.18); color: var(--gold-2); }
+.mb-timer.low { background: rgba(244, 63, 94, 0.25); color: #fecdd3; animation: winpop 0.5s infinite alternate; }
 .dealer {
   display: flex; align-items: center; gap: 10px; padding: 8px; padding-left: 12px; border-radius: 18px;
-  background: rgba(22, 31, 69, 0.85); border: 1px solid rgba(245, 181, 68, 0.25); width: 100%; max-width: 640px; margin: 0 auto;
+  background: rgba(22, 31, 69, 0.85); border: 1px solid rgba(245, 181, 68, 0.25);
 }
 .dl-tag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold-2); white-space: nowrap; }
 .icon-btn.big { width: 54px; height: 54px; border-radius: 16px; }
+.icon-btn.ok { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.5); color: #86efac; }
 .txt { color: var(--text); }
 .glow { animation: glow 1.8s infinite; }
 @keyframes glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 181, 68, 0.5); } 50% { box-shadow: 0 0 0 8px rgba(245, 181, 68, 0); } }
 .center { text-align: center; }
+.autobar {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 18px;
+  background: rgba(22, 31, 69, 0.85); border: 1px solid var(--line-2); font-weight: 700;
+}
+.countdown {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 900; font-size: 18px; color: #2a1700;
+  background: conic-gradient(var(--gold) 0 100%); box-shadow: 0 0 0 4px rgba(245, 181, 68, 0.25); animation: winpop 1s infinite alternate;
+}
+.requests { display: flex; flex-direction: column; gap: 6px; }
+.req { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 16px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); }
 .gameover {
-  width: 100%; max-width: 640px; margin: 0 auto; padding: 16px; border-radius: 20px; display: flex; flex-direction: column; gap: 12px;
+  padding: 14px; border-radius: 20px; display: flex; flex-direction: column; gap: 10px;
   background: radial-gradient(circle at 0% 0%, rgba(245, 181, 68, 0.22), transparent 60%), rgba(22, 31, 69, 0.92);
   border: 1px solid rgba(245, 181, 68, 0.4);
 }
 .go-head { display: flex; align-items: center; gap: 14px; }
-.go-name { font-size: 18px; }
+.go-name { font-size: 17px; }
 .go-actions { gap: 8px; }
-.player { width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.player { display: flex; flex-direction: column; gap: 10px; }
 .mine { display: flex; gap: 12px; align-items: center; }
 .hole { position: relative; display: flex; gap: 6px; padding: 0; }
 .hole.locked { cursor: default; }
 .hole .edit { position: absolute; right: -6px; bottom: -6px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: #2a1700; box-shadow: 0 3px 8px rgba(0,0,0,.5); }
 .folded-msg { color: var(--text-3); font-weight: 600; }
-.padwrap { padding: 12px 0 2px; border-top: 1px solid var(--line); }
-.waiting { text-align: center; color: var(--text-2); font-weight: 600; padding: 12px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
-.linkbtn { color: var(--gold-2); font-weight: 700; text-decoration: underline; }
+.padwrap { padding: 10px 0 0; border-top: 1px solid var(--line); }
+.waiting { text-align: center; color: var(--text-2); font-weight: 600; padding: 10px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.waiting:empty { display: none; }
 .loading-page { height: 100dvh; display: grid; place-items: center; }
 
 .slide-enter-active { transition: transform 0.5s var(--ease), opacity 0.35s; }
 .slide-leave-active { transition: transform 0.25s ease, opacity 0.2s; }
 .slide-enter-from, .slide-leave-to { transform: translateY(40px); opacity: 0; }
 
+/* ---------- móvil: todo cabe en pantalla sin deslizar ---------- */
 @media (max-width: 1099px) {
-  /* en móvil la mesa nunca se aplasta: si el panel no cabe, la página hace scroll */
   .tp { overflow-y: auto; overscroll-behavior: contain; }
-  .felt-zone { min-height: 330px; }
-  .dock { max-height: none; overflow: visible; }
 }
 @media (max-width: 700px) {
-  .felt-zone { padding: 40px 34px 44px; }
-  .felt { border-radius: 46% / 40%; max-height: none; }
-  .center { padding: 12% 6% 0; }
+  .bar { padding-bottom: 4px; gap: 8px; }
+  .bar .icon-btn { width: 38px; height: 38px; }
+  .tname { font-size: 16px; }
+  .codebtn { padding: 0 9px; letter-spacing: 0.06em; height: 36px; }
+  .felt-zone { padding: 78px 22px 14px; min-height: 240px; }
+  .felt { border-radius: 50% / 46%; max-height: none; }
+  .center { padding: 18% 6% 0; gap: 7px; }
   .board { gap: 4px; }
   .board :deep(.pcard.md) { --w: 44px; }
-  .codebtn { padding: 0 9px; letter-spacing: 0.06em; }
+  .dock { padding: 6px 12px calc(8px + var(--safe-b)); gap: 8px; max-height: none; overflow: visible; }
+  .turn .felt-zone { padding-top: 72px; min-height: 200px; }
+  .turn .center { padding-top: 22%; }
+  .turn .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
+  .turn .status { font-size: 12px; padding: 3px 10px; }
+  .padwrap { padding-top: 6px; }
 }
 @media (min-width: 1100px) {
   .tp { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }

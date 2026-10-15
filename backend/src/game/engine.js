@@ -485,12 +485,36 @@ function finishHand(table, payout, how) {
   if (handMode(hand) !== 'offline') hand.needsPersist = true;
 }
 
+/** ¿Puede este jugador recomprar ahora? (no mientras sigue vivo en una mano) */
+export function checkRebuy(table, userId) {
+  if (modeOf(table) === 'offline') fail('En el modo sin dinero no hay fichas');
+  const seat = table.seats.find((s) => s.userId === userId);
+  if (!seat) fail('No estás sentado en la mesa');
+  const p = isHandLive(table) ? getPlayer(table.hand, userId) : null;
+  if (p && !p.folded) fail('Podrás recomprar cuando termine la mano');
+  return seat;
+}
+
+/** Recompra: suma las fichas iniciales al jugador. */
+export function applyRebuy(table, userId, amount = table.settings.startingChips) {
+  const seat = checkRebuy(table, userId);
+  seat.chips += amount;
+  seat.buyIn = (seat.buyIn || 0) + amount;
+  seat.rebuys = (seat.rebuys || 0) + 1;
+  seat.timeouts = 0;
+  if (seat.status === 'sitout' && seat.chips > 0) seat.status = 'active';
+  delete seat.rebuyRequest;
+  return amount;
+}
+
 /** Nueva partida: todos vuelven a las fichas iniciales. */
 export function resetChips(table) {
   if (isHandLive(table)) fail('Espera a que termine la mano');
   for (const s of table.seats) {
     s.chips = table.settings.startingChips;
     s.buyIn = table.settings.startingChips;
+    s.rebuys = 0;
+    delete s.rebuyRequest;
   }
 }
 

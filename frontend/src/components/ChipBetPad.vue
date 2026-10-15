@@ -11,6 +11,7 @@ const props = defineProps({
   chips: { type: Array, required: true },
   pot: { type: Number, default: 0 },
   busy: Boolean,
+  compact: Boolean, // móvil: todo más pequeño para que quepa sin deslizar
 });
 const emit = defineEmits(['action']);
 
@@ -127,10 +128,11 @@ function pick(i) {
 const prevIdx = computed(() => (selected.value - 1 + props.chips.length) % props.chips.length);
 const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
 const visibleStack = computed(() => placed.value.slice(-8));
+const sz = computed(() => (props.compact ? { pile: 50, mini: 40, main: 54 } : { pile: 64, mini: 50, main: 66 }));
 </script>
 
 <template>
-  <div class="pad">
+  <div class="pad" :class="{ compact }">
     <!-- presets -->
     <div class="presets">
       <button v-for="p in presets" :key="p.label" class="preset" @click="setAmount(p.amount)">{{ p.label }}</button>
@@ -148,7 +150,7 @@ const visibleStack = computed(() => placed.value.slice(-8));
               class="pile-chip"
               :style="{ transform: `translateY(${-i * 5}px)`, zIndex: i }"
             >
-              <Chip :value="c.value" :index="c.index" :size="64" />
+              <Chip :value="c.value" :index="c.index" :size="sz.pile" />
             </div>
           </TransitionGroup>
         </div>
@@ -161,18 +163,18 @@ const visibleStack = computed(() => placed.value.slice(-8));
 
     <!-- controles -->
     <div class="controls">
-      <div class="side">
+      <div class="side left">
         <button class="sq" :disabled="!placed.length" aria-label="Deshacer" @click="undo"><Icon name="undo" /></button>
         <button class="sq" :disabled="!placed.length" aria-label="Limpiar" @click="clear"><Icon name="trash" /></button>
       </div>
 
       <button class="selector" aria-label="Elegir ficha" @click="expanded = true">
-        <div class="mini l"><Chip :value="chips[prevIdx]" :index="prevIdx" :size="50" /></div>
-        <div class="mini r"><Chip :value="chips[nextIdx]" :index="nextIdx" :size="50" /></div>
-        <div class="main"><Chip :value="chips[selected]" :index="selected" :size="66" /></div>
+        <div class="mini l"><Chip :value="chips[prevIdx]" :index="prevIdx" :size="sz.mini" /></div>
+        <div class="mini r"><Chip :value="chips[nextIdx]" :index="nextIdx" :size="sz.mini" /></div>
+        <div class="main"><Chip :value="chips[selected]" :index="selected" :size="sz.main" /></div>
       </button>
 
-      <div class="side">
+      <div class="side right">
         <button class="sq" :disabled="!placed.length" aria-label="Doblar" @click="double"><b>x2</b></button>
         <button class="sq dark" aria-label="Fichas" @click="expanded = true"><Icon name="menu" /></button>
       </div>
@@ -319,6 +321,32 @@ const visibleStack = computed(() => placed.value.slice(-8));
   .pad { gap: 8px; }
   .act { height: 48px; }
 }
+
+/* compacto (móvil): círculo y selector en la misma fila, botones a los lados */
+.pad.compact {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-areas: 'p p p p' 'l z s r' 'a a a a';
+  gap: 8px;
+  align-items: center;
+}
+.compact .presets { grid-area: p; }
+.compact .table-zone { grid-area: z; }
+.compact .controls { display: contents; }
+.compact .side { flex-direction: column; gap: 6px; }
+.compact .side.left { grid-area: l; }
+.compact .side.right { grid-area: r; }
+.compact .selector { grid-area: s; justify-self: center; width: 104px; height: 66px; }
+.compact .selector .mini { top: 10px; }
+.compact .actions { grid-area: a; max-width: none; }
+.compact .circle { width: 92px; height: 92px; box-shadow: 0 0 0 5px #0d1330, 0 0 0 6px rgba(255, 255, 255, 0.06); }
+.compact .ring { inset: 4px; border-width: 4px; }
+.compact .tap { font-size: 9.5px; }
+.compact .amount { font-size: 14px; margin-top: -10px; padding: 2px 10px; }
+.compact .sq { width: 40px; height: 40px; border-radius: 12px; }
+.compact .act { height: 46px; font-size: 14px; border-radius: 13px; }
+.compact .act.go.ok { font-size: 14px; }
+.compact .preset { height: 28px; font-size: 12.5px; padding: 0 10px; }
 
 /* abanico */
 .fan-overlay {

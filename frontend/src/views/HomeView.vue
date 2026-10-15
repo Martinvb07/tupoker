@@ -24,6 +24,17 @@ onMounted(async () => {
   stats.value = s.value?.stats || null;
 });
 
+async function closeTable(t) {
+  if (!confirm(`¿Cerrar "${t.name}" para todos? Las manos jugadas se guardan.`)) return;
+  try {
+    await api.post(`/tables/${t.code}/close`);
+    tables.value = tables.value.filter((x) => x.code !== t.code);
+    toast.success('Mesa cerrada');
+  } catch (e) {
+    toast.error(e.message);
+  }
+}
+
 function join() {
   const c = joinCode.value.trim().toUpperCase();
   if (c.length < 4) return toast.error('Escribe el código de la mesa');
@@ -84,6 +95,7 @@ function join() {
                 </div>
               </div>
             </div>
+            <button v-if="t.canClose" class="close-t" title="Cerrar mesa" @click.prevent.stop="closeTable(t)"><Icon name="x" :size="16" /></button>
             <span class="badge" :class="t.status === 'playing' ? 'badge-green' : 'badge-gold'">
               {{ t.status === 'playing' ? `Mano ${t.handNo}` : 'Esperando' }}
             </span>
@@ -146,6 +158,8 @@ function join() {
 .face { margin-left: -8px; box-shadow: 0 0 0 2px var(--surface); }
 .face:first-child { margin-left: 0; }
 .go { display: flex; align-items: center; gap: 4px; color: var(--gold-2); font-weight: 700; font-size: 14px; }
+.close-t { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--text-3); background: rgba(255, 255, 255, 0.05); margin-right: 6px; flex: none; transition: all 0.2s; }
+.close-t:hover { color: #fecdd3; background: rgba(244, 63, 94, 0.2); }
 .hscroll { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .hscroll::-webkit-scrollbar { display: none; }
 .gcard {

@@ -1,8 +1,17 @@
 import { Router } from 'express';
 import { Table, Group, User } from '../models.js';
 import { ah, HttpError, requireAuth } from '../auth.js';
-import { cacheTable, getTable, save, uniqueTableCode } from '../game/manager.js';
-import { broadcast } from '../hub.js';
+import { cacheTable, getTable, uniqueTableCode } from '../game/manager.js';
+import { isHandLive, cancelHand } from '../game/engine.js';
+import { commit } from '../game/autopilot.js';
+
+/** Cierra una mesa (devuelve las fichas de la mano en curso) y libera la mesa del grupo. */
+export async function closeTableNow(t) {
+  if (isHandLive(t)) cancelHand(t);
+  t.status = 'closed';
+  t.closedAt = new Date();
+  if (t.groupId) await Group.updateOne({ _id: t.groupId, activeTableCode: t.code }, { $set: { activeTableCode: null } });
+}
 
 const r = Router();
 r.use(requireAuth);
@@ -92,6 +101,7 @@ r.get('/mine', ah(async (req, res) => {
       group: t.groupId ? { id: t.groupId._id, name: t.groupId.name, emoji: t.groupId.emoji, color: t.groupId.color } : null,
       players: t.seats.length,
       seated: t.seats.some((s) => s.userId === req.userId),
+      canClose: t.ownerId?.toString() === req.userId || t.dealerId?.toString() === req.userId,
       settings: t.settings,
       handNo: t.handNo,
       seats: t.seats.slice(0, 6).map((s) => ({ displayName: s.displayName, avatarUrl: s.avatarUrl, avatarColor: s.avatarColor })),
@@ -117,6 +127,18 @@ r.get('/:code', ah(async (req, res) => {
   });
 }));
 
+// El creador o el dealer cierran la mesa desde fuera (p. ej. desde la lista de mesas abiertas)
+r.post('/:code/close', ah(async (req, res) => {
+  const t = await getTable(req.params.code);
+  if (!t) throw new HttpError(404, 'Mesa no encontrada');
+  if (t.ownerId !== req.userId && t.dealerId !== req.userId) throw new HttpError(403, 'Solo el creador o el dealer pueden cerrar la mesa');
+  if (t.status !== 'closed') {
+    await closeTableNow(t);
+    commit(t);
+  }
+  res.json({ ok: true });
+}));
+
 r.post('/:code/join', ah(async (req, res) => {
   const t = await getTable(req.params.code);
   if (!t) throw new HttpError(404, 'No existe ninguna mesa con ese código');
@@ -124,8 +146,7 @@ r.post('/:code/join', ah(async (req, res) => {
   if (!t.seats.some((s) => s.userId === req.userId)) {
     if (t.seats.length >= 10) throw new HttpError(400, 'La mesa está llena (máx. 10 jugadores)');
     t.seats.push(seatFor(req.user, t.settings.startingChips));
-    save(t);
-    broadcast(t);
+    commit(t);
   }
   res.json({ code: t.code });
 }));
