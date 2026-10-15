@@ -261,7 +261,17 @@ const isOwner = computed(() => g.value?.ownerId === auth.user.id);
       </section>
     </Transition>
 
-    <ShareSheet :open="showInvite" :code="g.inviteCode" path="/grupos/unirse/" title="Invitar al grupo" subtitle="Quien escanee el QR entra directo al grupo" @close="showInvite = false" />
+    <ShareSheet
+      :open="showInvite"
+      :code="g.inviteCode"
+      path="/grupos/unirse/"
+      title="Invitar al grupo"
+      subtitle="Quien escanee el QR entra directo al grupo"
+      :group-id="isAdmin ? g.id : null"
+      :member-ids="g.members.map((m) => m.id)"
+      @added="load"
+      @close="showInvite = false"
+    />
   </div>
   <div v-else class="page"><div class="skeleton" style="height: 160px"></div></div>
 </template>

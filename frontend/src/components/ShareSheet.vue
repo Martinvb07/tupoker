@@ -14,31 +14,52 @@ const props = defineProps({
   title: { type: String, default: 'Invita a la mesa' },
   subtitle: { type: String, default: 'Escanea el QR o comparte el código' },
   inviteFriends: Boolean, // muestra tu lista de amigos para avisarles
+  groupId: { type: String, default: null }, // en un grupo: los amigos se añaden como miembros
+  memberIds: { type: Array, default: () => [] }, // miembros actuales del grupo (no se ofrecen)
 });
-defineEmits(['close']);
+const emit = defineEmits(['close', 'added']);
 
-// ---- invitar amigos (les llega un aviso con botón "Unirme")
+// ---- invitar amigos (mesa: aviso con botón "Unirme"; grupo: se añaden directamente)
 const friends = ref([]);
 const picked = ref([]);
 const sending = ref(false);
+const loadingFriends = ref(false);
+const friendsError = ref(false);
+async function loadFriends() {
+  picked.value = [];
+  loadingFriends.value = true;
+  friendsError.value = false;
+  try {
+    const list = (await api.get('/friends')).friends.map((f) => f.user);
+    friends.value = props.groupId ? list.filter((u) => !props.memberIds.includes(u.id)) : list;
+  } catch {
+    friendsError.value = true;
+  } finally {
+    loadingFriends.value = false;
+  }
+}
+// immediate: al crear una mesa el panel ya nace abierto y hay que cargar la lista igual
 watch(
   () => props.open,
-  async (o) => {
-    if (!o || !props.inviteFriends) return;
-    picked.value = [];
-    try {
-      friends.value = (await api.get('/friends')).friends.map((f) => f.user);
-    } catch {
-      friends.value = [];
-    }
-  },
+  (o) => o && (props.inviteFriends || props.groupId) && loadFriends(),
+  { immediate: true },
 );
 const togglePick = (id) => (picked.value = picked.value.includes(id) ? picked.value.filter((x) => x !== id) : [...picked.value, id]);
 async function sendInvites() {
   sending.value = true;
   try {
-    const { sent } = await api.post('/friends/invite', { code: props.code, userIds: picked.value });
-    toast.success(sent === 1 ? 'Invitación enviada' : `${sent} invitaciones enviadas`);
+    if (props.groupId) {
+      for (const id of picked.value) {
+        const u = friends.value.find((f) => f.id === id);
+        await api.post(`/groups/${props.groupId}/members`, { username: u.username });
+      }
+      toast.success(picked.value.length === 1 ? 'Amigo añadido al grupo' : `${picked.value.length} amigos añadidos al grupo`);
+      emit('added');
+      friends.value = friends.value.filter((f) => !picked.value.includes(f.id));
+    } else {
+      const { sent } = await api.post('/friends/invite', { code: props.code, userIds: picked.value });
+      toast.success(sent === 1 ? 'Invitación enviada' : `${sent} invitaciones enviadas`);
+    }
     picked.value = [];
   } catch (e) {
     toast.error(e.message);
@@ -90,12 +111,20 @@ async function share() {
       <button class="btn btn-primary grow" @click="share"><Icon name="share" :size="18" />Compartir</button>
     </div>
 
-    <div v-if="inviteFriends" class="friends">
+    <div v-if="inviteFriends || groupId" class="friends">
       <div class="row-between">
-        <b>Invitar amigos</b>
-        <RouterLink v-if="!friends.length" to="/amigos" class="small lnk" @click="$emit('close')">Agregar amigos</RouterLink>
+        <b>{{ groupId ? 'Añadir amigos al grupo' : 'Invitar amigos' }}</b>
+        <RouterLink v-if="!loadingFriends && !friends.length" to="/amigos" class="small lnk" @click="$emit('close')">Agregar amigos</RouterLink>
       </div>
-      <p v-if="!friends.length" class="hint">Cuando tengas amigos agregados, aquí les mandas la invitación con un toque.</p>
+      <div v-if="loadingFriends" class="flist">
+        <div v-for="i in 4" :key="i" class="skeleton" style="flex: 0 0 60px; height: 70px"></div>
+      </div>
+      <p v-else-if="friendsError" class="hint">
+        No se pudo cargar tu lista de amigos. <button class="lnk" @click="loadFriends">Reintentar</button>
+      </p>
+      <p v-else-if="!friends.length" class="hint">
+        {{ groupId ? 'Todos tus amigos ya están en el grupo.' : 'Cuando tengas amigos agregados, aquí les mandas la invitación con un toque.' }}
+      </p>
       <div v-else class="flist">
         <button v-for="f in friends" :key="f.id" class="fbtn" :class="{ on: picked.includes(f.id) }" @click="togglePick(f.id)">
           <span class="fava">
@@ -106,8 +135,8 @@ async function share() {
           <span class="small ellipsis">{{ f.displayName }}</span>
         </button>
       </div>
-      <button v-if="friends.length" class="btn btn-block" :disabled="!picked.length || sending" @click="sendInvites">
-        <Icon name="users" :size="18" />Invitar{{ picked.length ? ` (${picked.length})` : '' }}
+      <button v-if="friends.length && !loadingFriends" class="btn btn-block" :class="{ 'btn-primary': picked.length }" :disabled="!picked.length || sending" @click="sendInvites">
+        <Icon :name="groupId ? 'user-plus' : 'users'" :size="18" />{{ groupId ? 'Añadir' : 'Invitar' }}{{ picked.length ? ` (${picked.length})` : '' }}
       </button>
     </div>
   </Sheet>
