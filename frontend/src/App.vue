@@ -6,6 +6,7 @@ import { api } from '@/lib/api.js';
 import { getSocket, resetSocket } from '@/lib/socket.js';
 import Toasts from '@/components/Toasts.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import Brand from '@/components/Brand.vue';
 import Avatar from '@/components/Avatar.vue';
 import Icon from '@/components/Icon.vue';
 
@@ -65,8 +66,7 @@ onMounted(() => document.body.classList.add('ready'));
     <header v-if="showNav" class="topnav">
       <div class="inner">
         <RouterLink to="/" class="brand">
-          <span class="logo">♠</span>
-          <span class="bname">Royal<b>Flush</b></span>
+          <Brand :size="38" />
         </RouterLink>
         <nav class="links">
           <RouterLink v-for="n in nav" :key="n.to" :to="n.to" class="lnk" :class="{ on: isActive(n), primary: n.primary }">
@@ -106,11 +106,6 @@ onMounted(() => document.body.classList.add('ready'));
 .topnav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(14px); background: rgba(11, 16, 38, 0.72); border-bottom: 1px solid var(--line); display: none; }
 .inner { max-width: 1180px; margin: 0 auto; padding: 0 28px; height: 68px; display: flex; align-items: center; gap: 24px; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 19px; }
-.logo {
-  width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; font-size: 20px; color: #2a1700;
-  background: linear-gradient(135deg, var(--gold-2), var(--gold-deep)); box-shadow: 0 6px 16px -6px rgba(245, 181, 68, 0.7);
-}
-.bname b { color: var(--gold); font-weight: 800; }
 .links { display: flex; gap: 4px; flex: 1; justify-content: center; }
 .lnk { display: flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 12px; font-weight: 600; color: var(--text-2); transition: all 0.2s; }
 .lnk:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }

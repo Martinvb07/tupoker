@@ -34,6 +34,8 @@ const blind = computed(() => {
   if (h.bbId === props.seat.userId) return 'BB';
   return null;
 });
+// en el showdown también se ven tus cartas en tu asiento
+const revealedMine = computed(() => props.isMe && props.player?.cards?.length === 2 && ['showdown', 'done'].includes(props.hand?.stage) && !props.player.folded);
 const won = computed(
   () =>
     props.hand?.stage === 'done' &&
@@ -50,7 +52,7 @@ const lastLabel = computed(() => {
 
 <template>
   <div class="seat" :class="{ turn, folded: player?.folded, out: !player && hand && hand.stage !== 'done', me: isMe, won, sitout: seat.status === 'sitout' }">
-    <div class="cards" v-if="showCards && !isMe">
+    <div class="cards" :class="{ shown: revealedMine || (!isMe && player?.cards?.length === 2) }" v-if="showCards && (!isMe || revealedMine)">
       <PlayingCard :card="player.cards?.[0] || ''" size="xs" />
       <PlayingCard :card="player.cards?.[1] || ''" size="xs" />
     </div>
@@ -94,6 +96,8 @@ const lastLabel = computed(() => {
 .seat.folded, .seat.out, .seat.sitout { opacity: 0.45; filter: grayscale(0.6); }
 .cards { display: flex; gap: 2px; margin-bottom: -14px; z-index: 0; transform: rotate(-4deg); }
 .cards > :last-child { transform: rotate(8deg) translateY(1px); }
+.cards.shown { margin-bottom: -10px; z-index: 3; filter: drop-shadow(0 6px 10px rgba(0,0,0,.6)); }
+.cards.shown :deep(.pcard.xs) { --w: 32px; }
 .ava-wrap { position: relative; z-index: 1; border-radius: 50%; padding: 3px; background: rgba(5, 9, 28, 0.8); box-shadow: 0 6px 16px -6px rgba(0,0,0,.8); }
 .turn .ava-wrap { background: var(--gold); box-shadow: 0 0 0 0 rgba(245, 181, 68, 0.6), 0 0 24px rgba(245, 181, 68, 0.6); animation: pulse 1.6s infinite; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(245, 181, 68, 0.55); } 100% { box-shadow: 0 0 0 14px rgba(245, 181, 68, 0); } }

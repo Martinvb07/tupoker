@@ -6,6 +6,7 @@ import { setUser, toast } from '@/lib/store.js';
 import { resetSocket } from '@/lib/socket.js';
 import PlayingCard from '@/components/PlayingCard.vue';
 import Chip from '@/components/Chip.vue';
+import Brand from '@/components/Brand.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -41,7 +42,7 @@ async function submit() {
         <div class="ch ch2"><Chip :value="25000" :index="1" :size="56" /></div>
         <div class="ch ch3"><Chip :value="1000000" :index="5" :size="48" /></div>
       </div>
-      <h1>Royal<span>Flush</span></h1>
+      <RouterLink to="/bienvenido" class="hero-brand"><Brand :size="64" /></RouterLink>
       <p>Lleva las partidas con tus amigos al siguiente nivel: fichas, turnos, probabilidades y rankings en tiempo real.</p>
     </div>
 
@@ -87,6 +88,8 @@ async function submit() {
   grid-template-columns: 1fr;
 }
 .hero { text-align: center; max-width: 460px; }
+.hero-brand { display: inline-block; margin-bottom: 4px; }
+.hero-brand :deep(.word) { font-size: clamp(34px, 7vw, 48px) !important; }
 .hero h1 { font-size: clamp(40px, 8vw, 64px); font-weight: 900; letter-spacing: -0.03em; }
 .hero h1 span { background: linear-gradient(180deg, var(--gold-2), var(--gold-deep)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero p { color: var(--text-2); margin-top: 10px; font-size: 16px; }

@@ -1,4 +1,4 @@
-# TuPoker — Royal Flush
+# TuPoker
 
 Web para gestionar partidas de póker Texas Hold'em con amigos usando **cartas físicas**: la app lleva las fichas, los turnos, los botes y los rankings. El dealer pone en la app las cartas del flop, turn y river, y cada jugador registra sus dos cartas para ver qué jugada tiene y su probabilidad de ganar.
 

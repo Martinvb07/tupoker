@@ -1,1 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#d97706"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="url(#g)"/><circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="3" stroke-dasharray="8 6"/><path d="M32 18c6 7 12 11 12 17a6 6 0 0 1-10 4.5l2 6.5h-8l2-6.5A6 6 0 0 1 20 35c0-6 6-10 12-17z" fill="#111827"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22307a"/>
+      <stop offset="1" stop-color="#0a0f24"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#ffe7a8"/>
+      <stop offset="0.5" stop-color="#f5b544"/>
+      <stop offset="1" stop-color="#c47a12"/>
+    </linearGradient>
+    <radialGradient id="felt" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#16204d"/>
+      <stop offset="1" stop-color="#0a0f24"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="6" y="6" width="500" height="500" rx="110" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="4"/>
+  <!-- ficha -->
+  <circle cx="256" cy="256" r="182" fill="url(#gold)"/>
+  <circle cx="256" cy="256" r="152" fill="none" stroke="#fff8e6" stroke-width="40" stroke-dasharray="46 73.4" transform="rotate(-11 256 256)"/>
+  <circle cx="256" cy="256" r="182" fill="none" stroke="#7a4a08" stroke-opacity="0.35" stroke-width="5"/>
+  <circle cx="256" cy="256" r="124" fill="url(#felt)"/>
+  <circle cx="256" cy="256" r="124" fill="none" stroke="url(#gold)" stroke-width="7"/>
+  <!-- pica -->
+  <path transform="translate(256 262) scale(1.62) translate(-50 -52)" fill="url(#gold)" d="M50 6C50 6 13 36 13 60c0 14 11 23 23 23 6 0 11-3 14-7-1 9-5 15-13 19h26c-8-4-12-10-13-19 3 4 8 7 14 7 12 0 23-9 23-23C87 36 50 6 50 6z"/>
+</svg>

@@ -16,6 +16,7 @@ import ShareSheet from '@/components/ShareSheet.vue';
 import ShowdownSheet from '@/components/ShowdownSheet.vue';
 import TableMenu from '@/components/TableMenu.vue';
 import Sheet from '@/components/Sheet.vue';
+import ShowdownStrip from '@/components/ShowdownStrip.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -133,6 +134,25 @@ const layout = computed(() => {
 });
 
 const handNames = computed(() => view.value?.handNames || {});
+
+// ---------- cartas boca arriba (all-in / showdown) ----------
+const stripFinal = computed(() => !revealing.value && view.value?.stage === 'done');
+const stripAllIn = computed(() => !!hand.value?.players.some((p) => p.allIn && !p.folded));
+const revealed = computed(() => {
+  const h = view.value;
+  if (!h || !s.value) return [];
+  const list = h.players.filter((p) => !p.folded && p.cards?.length === 2);
+  if (list.length < 2 || !list.some((p) => p.userId !== s.value.me)) return [];
+  const r = hand.value?.result;
+  const isWinner = (id) => !!r && (h.mode === 'offline' ? r.winners.includes(id) : (r.payout?.[id] || 0) > 0);
+  return list.map((p) => ({
+    userId: p.userId,
+    seat: seatsById.value[p.userId] || { displayName: '—' },
+    cards: p.cards,
+    isMe: p.userId === s.value.me,
+    winner: stripFinal.value && isWinner(p.userId),
+  }));
+});
 const winnerText = computed(() => {
   const h = view.value;
   const r = h?.result;
@@ -401,6 +421,11 @@ const myBadge = computed(() => {
         <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
       </div>
 
+      <!-- cartas de todos a la vista (all-in / showdown) -->
+      <Transition name="slide">
+        <ShowdownStrip v-if="revealed.length" :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
+      </Transition>
+
       <!-- partida terminada -->
       <Transition name="slide">
         <div v-if="gameOver" class="gameover">
@@ -500,7 +525,7 @@ const myBadge = computed(() => {
       </div>
 
       <!-- jugador -->
-      <div v-if="me && live" class="player">
+      <div v-if="me && live && !revealed.length" class="player">
         <div class="mine">
           <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
             <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded">?</PlayingCard>
@@ -710,6 +735,13 @@ const myBadge = computed(() => {
   .turn .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
   .turn .status { font-size: 12px; padding: 3px 10px; }
   .padwrap { padding-top: 6px; }
+}
+/* mesa grande: el aviso va encima del bote, lejos de tu asiento */
+@media (min-width: 701px) {
+  .status { order: -1; }
+}
+@media (min-width: 701px) and (max-width: 1099px) {
+  .felt-zone { min-height: 420px; }
 }
 @media (min-width: 1100px) {
   .tp { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }

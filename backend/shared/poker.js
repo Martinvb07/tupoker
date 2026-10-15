@@ -223,6 +223,37 @@ export function equity({ hole, board = [], opponents = 1, iterations = 4000, dea
   };
 }
 
+/**
+ * Probabilidad de ganar de varias manos conocidas (all-in / showdown) completando el board.
+ * Devuelve un % por mano; los empates se reparten.
+ */
+export function equityVs(hands, board = [], iterations = 4000) {
+  const hs = hands.map((h) => h.map(cardToInt));
+  const b = board.map(cardToInt);
+  const used = new Set([...hs.flat(), ...b]);
+  const pool = [];
+  for (let i = 0; i < 52; i++) if (!used.has(i)) pool.push(i);
+  const need = 5 - b.length;
+  const iters = need === 0 ? 1 : iterations;
+  const wins = new Array(hs.length).fill(0);
+  const full = new Array(5);
+  const scores = new Array(hs.length);
+  for (let it = 0; it < iters; it++) {
+    for (let i = 0; i < need; i++) {
+      const j = i + Math.floor(Math.random() * (pool.length - i));
+      const t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    for (let i = 0; i < 5; i++) full[i] = i < b.length ? b[i] : pool[i - b.length];
+    let best = -1, count = 0;
+    for (let k = 0; k < hs.length; k++) {
+      scores[k] = evalInts([...hs[k], ...full]);
+      if (scores[k] > best) { best = scores[k]; count = 1; } else if (scores[k] === best) count++;
+    }
+    for (let k = 0; k < hs.length; k++) if (scores[k] === best) wins[k] += 1 / count;
+  }
+  return wins.map((w) => (w / iters) * 100);
+}
+
 // ---------- Fichas ----------
 
 const CHIP_MULTIPLIERS = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];

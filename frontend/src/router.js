@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { auth } from './lib/store.js';
 
 const routes = [
+  { path: '/bienvenido', name: 'landing', component: () => import('./views/LandingView.vue'), meta: { guest: true } },
   { path: '/entrar', name: 'login', component: () => import('./views/AuthView.vue'), meta: { guest: true } },
   { path: '/registro', name: 'register', component: () => import('./views/AuthView.vue'), meta: { guest: true } },
   { path: '/', name: 'home', component: () => import('./views/HomeView.vue') },
@@ -25,6 +26,7 @@ export const router = createRouter({
 });
 
 router.beforeEach((to) => {
-  if (!to.meta.guest && !auth.user) return { name: 'login', query: { next: to.fullPath } };
+  // sin sesión: la portada muestra la landing; el resto pide entrar y vuelve después
+  if (!to.meta.guest && !auth.user) return to.name === 'home' ? { name: 'landing' } : { name: 'login', query: { next: to.fullPath } };
   if (to.meta.guest && auth.user) return { path: '/' };
 });

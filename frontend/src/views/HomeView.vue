@@ -13,6 +13,7 @@ const router = useRouter();
 const tables = ref(null);
 const groups = ref(null);
 const stats = ref(null);
+const playingFriends = ref([]);
 const joinCode = ref('');
 const scanning = ref(false);
 
@@ -20,7 +21,8 @@ const hour = new Date().getHours();
 const greet = hour < 6 ? 'Buenas noches' : hour < 13 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches';
 
 onMounted(async () => {
-  const [t, g, s] = await Promise.allSettled([api.get('/tables/mine'), api.get('/groups'), api.get('/stats/me')]);
+  const [t, g, s, f] = await Promise.allSettled([api.get('/tables/mine'), api.get('/groups'), api.get('/stats/me'), api.get('/friends')]);
+  playingFriends.value = (f.value?.friends || []).map((x) => x.user).filter((u) => u.playing);
   tables.value = t.value?.tables || [];
   groups.value = g.value?.groups || [];
   stats.value = s.value?.stats || null;
@@ -75,6 +77,23 @@ function join() {
         </div>
       </form>
     </div>
+
+    <section v-if="playingFriends.length" class="sec rise rise-2">
+      <div class="row-between sh">
+        <h2 class="row" style="gap: 8px"><span class="live-dot"></span>Amigos jugando ahora</h2>
+        <RouterLink to="/amigos" class="btn btn-sm btn-ghost">Ver amigos <Icon name="right" :size="16" /></RouterLink>
+      </div>
+      <div class="hscroll">
+        <div v-for="u in playingFriends" :key="u.id" class="card pf">
+          <Avatar :user="u" :size="42" ring />
+          <div class="grow">
+            <b class="ellipsis">{{ u.displayName }}</b>
+            <div class="small muted ellipsis"><Icon :name="modeInfo(u.playing.mode).icon" :size="12" class="inl" /> {{ u.playing.name }} · {{ u.playing.players }} jug.</div>
+          </div>
+          <RouterLink :to="'/unirse/' + u.playing.code" class="btn btn-sm btn-primary">Unirme</RouterLink>
+        </div>
+      </div>
+    </section>
 
     <section class="sec rise rise-3">
       <div class="row-between sh">
@@ -168,6 +187,9 @@ function join() {
 .face { margin-left: -8px; box-shadow: 0 0 0 2px var(--surface); }
 .face:first-child { margin-left: 0; }
 .go { display: flex; align-items: center; gap: 4px; color: var(--gold-2); font-weight: 700; font-size: 14px; }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px var(--gold); animation: pulse-l 1.5s infinite; }
+@keyframes pulse-l { 50% { transform: scale(1.4); opacity: 0.6; } }
+.pf { flex: 0 0 300px; scroll-snap-align: start; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-color: rgba(245, 181, 68, 0.35); }
 .close-t { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--text-3); background: rgba(255, 255, 255, 0.05); margin-right: 6px; flex: none; transition: all 0.2s; }
 .close-t:hover { color: #fecdd3; background: rgba(244, 63, 94, 0.2); }
 .hscroll { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; scrollbar-width: none; }
