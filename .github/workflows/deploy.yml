@@ -119,7 +119,7 @@ jobs:
           recargar_pm2
 
           # Health check de la API. Si falla, se reconstruye la versión anterior.
-          if ! verificar "http://127.0.0.1:4000/api/health"; then
+          if ! verificar "http://127.0.0.1:4010/api/health"; then
             echo "!! Health check fallido — revirtiendo a $ANTERIOR"
             git reset --hard "$ANTERIOR"
             git clean -fd

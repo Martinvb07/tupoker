@@ -40,7 +40,7 @@ cd backend && cp .env.example .env && npm install && npm run dev
 cd frontend && npm install && npm run dev      # http://localhost:5173
 ```
 
-Vite redirige `/api`, `/socket.io` y `/uploads` al backend (puerto 4000). Para probar desde el móvil en la misma red, abre `http://IP-DE-TU-PC:5173`.
+Vite redirige `/api`, `/socket.io` y `/uploads` al backend (puerto 4000 en local; en producción la API usa el 4010). Para probar desde el móvil en la misma red, abre `http://IP-DE-TU-PC:5173`.
 
 Tests del motor: `cd backend && npm test`.
 

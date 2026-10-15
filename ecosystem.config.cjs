@@ -14,7 +14,7 @@ module.exports = {
       script: 'src/index.js',
       exec_mode: 'fork',
       instances: 1,
-      env: { NODE_ENV: 'production', PORT: 4000 },
+      env: { NODE_ENV: 'production', PORT: 4010 },
       max_memory_restart: '400M',
       kill_timeout: 5000,
       time: true,
