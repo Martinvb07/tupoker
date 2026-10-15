@@ -7,6 +7,7 @@ import Icon from './Icon.vue';
 import Segmented from './Segmented.vue';
 import SettingsForm from './SettingsForm.vue';
 import { formatChips, formatSigned } from '@/lib/format.js';
+import { ask } from '@/lib/store.js';
 
 const props = defineProps({
   open: Boolean,
@@ -39,7 +40,7 @@ watch(() => props.open, (o) => {
 });
 const offline = computed(() => (props.state.settings.mode || 'live') === 'offline');
 async function newGame() {
-  if (!confirm(`¿Empezar una nueva partida? Todos vuelven a ${formatChips(props.state.settings.startingChips)} fichas.`)) return;
+  if (!(await ask({ title: '¿Empezar una nueva partida?', message: `Todos vuelven a ${formatChips(props.state.settings.startingChips)} fichas.`, confirmLabel: 'Nueva partida', icon: 'rotate' }))) return;
   if (await props.run('dealer:resetChips')) emit('close');
 }
 
@@ -56,15 +57,15 @@ async function act(event, payload, msg) {
 async function saveSettings() {
   if (await props.run('dealer:settings', { settings: settings.value, name: name.value })) emit('close');
 }
-function kick(s) {
-  if (confirm(`¿Expulsar a ${s.displayName}?`)) act("dealer:kick", { userId: s.userId }, true);
+async function kick(s) {
+  if (await ask({ title: `¿Expulsar a ${s.displayName}?`, message: 'Saldrá de la mesa y perderá su asiento.', confirmLabel: 'Expulsar', danger: true })) act('dealer:kick', { userId: s.userId }, true);
 }
 async function leave() {
-  if (!confirm('¿Seguro que quieres salir de la mesa?')) return;
+  if (!(await ask({ title: '¿Salir de la mesa?', message: 'Si estás en una mano te retiras de ella. Si eres dealer o creador, el rol pasa al siguiente jugador.', confirmLabel: 'Salir', danger: true, icon: 'door' }))) return;
   if (await props.run('table:leave')) router.push('/');
 }
 async function closeTable() {
-  if (!confirm('¿Cerrar la mesa para todos? Las estadísticas ya jugadas se guardan.')) return;
+  if (!(await ask({ title: '¿Cerrar la mesa para todos?', message: 'Las manos jugadas y los rankings se guardan.', confirmLabel: 'Cerrar mesa', danger: true }))) return;
   if (await props.run('dealer:close')) router.push('/');
 }
 </script>
@@ -81,7 +82,7 @@ async function closeTable() {
             <div class="grow">
               <div class="row nm">
                 <span class="ellipsis">{{ s.displayName }}</span>
-                <span v-if="s.userId === state.dealerId" class="badge badge-gold">🎩 Dealer</span>
+                <span v-if="s.userId === state.dealerId && !isRandom" class="badge badge-gold"><Icon name="dealer" :size="12" />Dealer</span>
                 <span v-if="s.status === 'sitout'" class="badge">Fuera</span>
                 <span v-if="!s.online" class="badge">Offline</span>
               </div>
@@ -104,11 +105,11 @@ async function closeTable() {
                   <button class="btn btn-sm" @click="act('dealer:seat', { userId: s.userId, status: s.status === 'sitout' ? 'active' : 'sitout' }, true)">
                     {{ s.status === 'sitout' ? 'Sentar' : 'Levantar' }}
                   </button>
-                  <button v-if="s.userId !== state.dealerId && canAssignDealer" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)">🎩 Hacer dealer</button>
+                  <button v-if="s.userId !== state.dealerId && canAssignDealer" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)"><Icon name="dealer" :size="15" />Hacer dealer</button>
                   <button v-if="s.userId !== state.me" class="btn btn-sm btn-danger" @click="kick(s)">Expulsar</button>
                 </div>
               </template>
-              <button v-else-if="s.userId !== state.dealerId && canAssignDealer" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)">🎩 Hacer dealer</button>
+              <button v-else-if="s.userId !== state.dealerId && canAssignDealer" class="btn btn-sm" @click="act('table:setDealer', { userId: s.userId }, true)"><Icon name="dealer" :size="15" />Hacer dealer</button>
             </div>
           </Transition>
         </div>
@@ -147,6 +148,8 @@ async function closeTable() {
           {{ mySeat.status === 'sitout' ? 'Volver a jugar' : 'Ausentarme (no jugar las próximas manos)' }}
         </button>
         <button class="btn btn-danger btn-block" @click="leave"><Icon name="logout" :size="18" />Salir de la mesa</button>
+        <button v-if="state.isOwner && !state.canManage" class="btn btn-ghost btn-block" @click="closeTable"><Icon name="x" :size="18" />Cerrar la mesa para todos</button>
+        <p class="hint">Si te vas siendo dealer o creador, el rol pasa al siguiente jugador.</p>
       </div>
     </Transition>
   </Sheet>

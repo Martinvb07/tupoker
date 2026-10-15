@@ -62,6 +62,7 @@ export function save(table) {
   const snapshot = JSON.parse(JSON.stringify({
     name: table.name,
     dealerId: table.dealerId,
+    ownerId: table.ownerId,
     settings: table.settings,
     seats: table.seats,
     status: table.status,
@@ -127,6 +128,18 @@ export function markOnline(code, userId, delta) {
   else m.set(userId, n);
 }
 export const isOnline = (code, userId) => !!presence.get(code)?.get(userId);
+
+/** Mesa abierta en la que el usuario está sentado y conectado ahora mismo (para "amigos jugando"). */
+export function activeTableOf(userId) {
+  for (const t of cache.values()) {
+    if (t.status === 'closed') continue;
+    const seat = t.seats.find((s) => s.userId === userId);
+    if (seat && isOnline(t.code, userId)) {
+      return { code: t.code, name: t.name, mode: t.settings?.mode || 'live', players: t.seats.length, inHand: !!t.hand && t.hand.stage !== 'done' };
+    }
+  }
+  return null;
+}
 
 /** Quién gestiona la mesa: el dealer; en modo aleatorio (sin dealer) también el anfitrión. */
 export function canManage(table, userId) {

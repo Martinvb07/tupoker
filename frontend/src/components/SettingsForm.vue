@@ -49,7 +49,7 @@ function removeChip(v) {
           :class="{ on: mode === m.value }"
           @click="set('mode', m.value)"
         >
-          <span class="mi">{{ m.icon }}</span>
+          <span class="mi"><Icon :name="m.icon" :size="24" /></span>
           <b>{{ m.label }}</b>
           <small>{{ m.desc }}</small>
           <span class="check"><Icon name="check" :size="14" /></span>
@@ -124,7 +124,7 @@ function removeChip(v) {
 }
 .mode:hover { border-color: var(--line-2); }
 .mode.on { border-color: var(--gold); background: rgba(245, 181, 68, 0.09); transform: translateY(-2px); }
-.mi { font-size: 24px; line-height: 1; margin-bottom: 4px; }
+.mi { line-height: 1; margin-bottom: 4px; color: var(--gold-2); }
 .mode b { font-size: 15px; }
 .mode small { color: var(--text-2); font-size: 12.5px; line-height: 1.35; }
 .check {

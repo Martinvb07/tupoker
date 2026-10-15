@@ -161,3 +161,20 @@ test('recompra: solo fuera de una mano viva y suma las fichas iniciales', () => 
   t.settings.mode = 'offline';
   assert.throws(() => e.checkRebuy(t, 'p0'), /sin dinero/);
 });
+
+test('recompra votada: se aplica solo cuando aceptan todos los demás', () => {
+  const t = mesa(3, [0, 1000, 1000]);
+  t.settings.mode = 'random';
+  t.seats[0].rebuyRequest = { amount: 1000, needed: ['p1', 'p2'], approvals: ['p1'] };
+  assert.deepEqual(e.settleRebuyVotes(t), []);
+  assert.equal(t.seats[0].chips, 0);
+  t.seats[0].rebuyRequest.approvals.push('p2');
+  assert.deepEqual(e.settleRebuyVotes(t), ['p0']);
+  assert.equal(t.seats[0].chips, 1000);
+  assert.equal(t.seats[0].rebuyRequest, undefined);
+  // si un votante se va de la mesa, ya no hace falta su voto
+  t.seats[1].rebuyRequest = { amount: 500, needed: ['p0', 'p2'], approvals: ['p0'] };
+  t.seats = t.seats.filter((s) => s.userId !== 'p2');
+  assert.deepEqual(e.settleRebuyVotes(t), ['p1']);
+  assert.equal(t.seats[1].chips, 1500);
+});

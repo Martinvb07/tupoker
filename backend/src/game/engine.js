@@ -507,6 +507,29 @@ export function applyRebuy(table, userId, amount = table.settings.startingChips)
   return amount;
 }
 
+/**
+ * Recompras votadas (modo aleatorio): se aplican cuando todos los demás jugadores
+ * que siguen en la mesa las han aceptado. Devuelve los userIds a los que se aplicó.
+ */
+export function settleRebuyVotes(table) {
+  const applied = [];
+  const present = new Set(table.seats.map((s) => s.userId));
+  for (const seat of table.seats) {
+    const req = seat.rebuyRequest;
+    if (!req?.needed) continue;
+    req.needed = req.needed.filter((id) => present.has(id));
+    req.approvals = (req.approvals || []).filter((id) => req.needed.includes(id));
+    if (req.approvals.length < req.needed.length) continue;
+    try {
+      applyRebuy(table, seat.userId, req.amount);
+      applied.push(seat.userId);
+    } catch {
+      /* sigue jugando una mano: se aplicará al terminarla */
+    }
+  }
+  return applied;
+}
+
 /** Nueva partida: todos vuelven a las fichas iniciales. */
 export function resetChips(table) {
   if (isHandLive(table)) fail('Espera a que termine la mano');

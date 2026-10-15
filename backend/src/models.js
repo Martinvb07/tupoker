@@ -43,7 +43,7 @@ const groupSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 40 },
     description: { type: String, default: '', maxlength: 200 },
-    emoji: { type: String, default: '♠️' },
+    emoji: { type: String, default: 'spade' }, // nombre de icono
     color: { type: String, default: '#10b981' },
     ownerId: { type: Types.ObjectId, ref: 'User', required: true },
     members: [
@@ -119,7 +119,19 @@ const playerHandSchema = new Schema(
   { timestamps: true },
 );
 
+// Amistad: una solicitud de requester a recipient; al aceptarla pasa a 'accepted'.
+const friendshipSchema = new Schema(
+  {
+    requester: { type: Types.ObjectId, ref: 'User', required: true, index: true },
+    recipient: { type: Types.ObjectId, ref: 'User', required: true, index: true },
+    status: { type: String, enum: ['pending', 'accepted'], default: 'pending' },
+  },
+  { timestamps: true },
+);
+friendshipSchema.index({ requester: 1, recipient: 1 }, { unique: true });
+
 export const User = model('User', userSchema);
+export const Friendship = model('Friendship', friendshipSchema);
 export const Group = model('Group', groupSchema);
 export const Table = model('Table', tableSchema);
 export const Hand = model('Hand', handSchema);

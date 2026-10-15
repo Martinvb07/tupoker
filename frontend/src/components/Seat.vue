@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import Avatar from './Avatar.vue';
 import PlayingCard from './PlayingCard.vue';
 import Chip from './Chip.vue';
+import Icon from './Icon.vue';
 import { formatChips, ACTION_LABEL } from '@/lib/format.js';
 
 const props = defineProps({
@@ -58,7 +59,7 @@ const lastLabel = computed(() => {
       <span v-if="turn && secondsLeft" class="secs num" :class="{ low: secondsLeft <= 10 }">{{ secondsLeft }}</span>
       <Avatar :user="seat" :size="48" />
       <span v-if="badge" class="btn-badge">D</span>
-      <span v-if="isDealer" class="dealer-badge" title="Dealer">🎩</span>
+      <span v-if="isDealer" class="dealer-badge" title="Dealer"><Icon name="dealer" :size="11" :stroke="2.6" /></span>
       <span v-if="!seat.online" class="offline" title="Desconectado"></span>
     </div>
     <div class="plate">
@@ -67,7 +68,7 @@ const lastLabel = computed(() => {
     </div>
     <Transition name="pop">
       <div v-if="lastLabel && hand?.stage !== 'done'" :key="lastLabel" class="action" :class="player.last.type">{{ lastLabel }}</div>
-      <div v-else-if="won" class="action win">{{ mode === 'offline' ? '🏆 Gana' : '+' + formatChips(player.won) }}</div>
+      <div v-else-if="won" class="action win"><Icon v-if="mode === 'offline'" name="trophy" :size="11" /> {{ mode === 'offline' ? 'Gana' : '+' + formatChips(player.won) }}</div>
       <div v-else-if="seat.status === 'sitout'" class="action muted">Fuera</div>
     </Transition>
     <div v-if="handName" class="hname">{{ handName }}</div>
@@ -111,7 +112,7 @@ const lastLabel = computed(() => {
   position: absolute; right: -6px; bottom: -2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; color: #111;
   font-size: 11px; font-weight: 900; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
-.dealer-badge { position: absolute; left: -8px; top: -8px; font-size: 18px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+.dealer-badge { position: absolute; left: -6px; top: -6px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #2a1700; background: linear-gradient(135deg, var(--gold-2), var(--gold-deep)); box-shadow: 0 2px 6px rgba(0,0,0,.6); }
 .offline { position: absolute; right: 0; top: 0; width: 11px; height: 11px; border-radius: 50%; background: #64748b; border: 2px solid #0b1026; }
 .plate {
   margin-top: -8px; z-index: 2; min-width: 76px; max-width: 92px; padding: 3px 8px 4px; border-radius: 10px; text-align: center;

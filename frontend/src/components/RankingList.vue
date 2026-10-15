@@ -2,6 +2,7 @@
 // Podio + lista para rankings de jugadores.
 import { computed } from 'vue';
 import Avatar from './Avatar.vue';
+import Icon from './Icon.vue';
 import { formatChips, formatSigned } from '@/lib/format.js';
 import { auth } from '@/lib/store.js';
 
@@ -27,14 +28,14 @@ const rest = computed(() => props.rows.slice(3));
 
 <template>
   <div v-if="!rows.length" class="card empty">
-    <div class="big">🏆</div>
+    <div class="big"><Icon name="trophy" :size="40" :stroke="1.6" /></div>
     Todavía no hay manos jugadas. ¡El ranking se llena solo al jugar!
   </div>
   <div v-else>
     <div class="podium">
       <template v-for="(r, i) in podium" :key="i">
         <RouterLink v-if="r" :to="`/u/${r.user.username}`" class="pod" :class="'p' + (i === 1 ? 1 : i === 0 ? 2 : 3)">
-          <div class="crown" v-if="i === 1">👑</div>
+          <div class="crown" v-if="i === 1"><Icon name="crown" :size="30" :stroke="2.2" /></div>
           <Avatar :user="r.user" :size="i === 1 ? 76 : 60" ring />
           <b class="ellipsis">{{ r.user.displayName }}</b>
           <span class="num v" :class="tone(r)">{{ val(r) }}</span>
@@ -65,7 +66,7 @@ const rest = computed(() => props.rows.slice(3));
 .pod.p3 { animation-delay: 0.3s; }
 .pod b { max-width: 100%; font-size: 14px; }
 .v { font-weight: 800; font-size: 15px; }
-.crown { font-size: 26px; margin-bottom: -6px; animation: float 3s ease-in-out infinite; }
+.crown { color: var(--gold-2); filter: drop-shadow(0 4px 10px rgba(245, 181, 68, 0.5)); margin-bottom: -6px; animation: float 3s ease-in-out infinite; }
 @keyframes float { 50% { transform: translateY(-5px); } }
 .block {
   width: 100%; border-radius: 16px 16px 6px 6px; display: grid; place-items: center; font-weight: 900; font-size: 28px;

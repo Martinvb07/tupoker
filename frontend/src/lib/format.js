@@ -38,9 +38,9 @@ export const ACTION_LABEL = {
 };
 
 export const MODES = [
-  { value: 'live', icon: '🃏', label: 'En vivo', short: 'En vivo', desc: 'Cartas físicas y fichas. El dealer pone el board y cada uno registra sus cartas.' },
-  { value: 'random', icon: '🎲', label: 'Aleatorio', short: 'Aleatorio', desc: 'Con fichas. La app baraja y reparte las cartas y el board.' },
-  { value: 'offline', icon: '☕', label: 'Sin dinero', short: 'Sin dinero', desc: 'Cartas físicas sin apuestas: solo jugadas, probabilidades y ganador.' },
+  { value: 'live', icon: 'hand', label: 'En vivo', short: 'En vivo', desc: 'Cartas físicas y fichas. El dealer pone el board y cada uno registra sus cartas.' },
+  { value: 'random', icon: 'dice', label: 'Aleatorio', short: 'Aleatorio', desc: 'Con fichas. La app baraja y reparte las cartas y el board.' },
+  { value: 'offline', icon: 'coffee', label: 'Sin dinero', short: 'Sin dinero', desc: 'Cartas físicas sin apuestas: solo jugadas, probabilidades y ganador.' },
 ];
 export const modeInfo = (m) => MODES.find((x) => x.value === m) || MODES[0];
 

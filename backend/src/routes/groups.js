@@ -71,6 +71,7 @@ r.get('/', ah(async (req, res) => {
       color: g.color,
       members: g.members.length,
       activeTableCode: g.activeTableCode,
+      isOwner: g.ownerId.toString() === req.userId,
       defaults: g.defaults,
     })),
   });
@@ -82,7 +83,7 @@ r.post('/', ah(async (req, res) => {
   const g = await Group.create({
     name,
     description: String(req.body.description || '').slice(0, 200),
-    emoji: String(req.body.emoji || '♠️').slice(0, 8),
+    emoji: String(req.body.emoji || 'spade').slice(0, 20),
     color: /^#[0-9a-f]{6}$/i.test(req.body.color) ? req.body.color : '#10b981',
     ownerId: req.user._id,
     members: [{ userId: req.user._id, role: 'admin' }],
@@ -118,7 +119,7 @@ r.patch('/:id', ah(async (req, res) => {
     g.name = n;
   }
   if (b.description !== undefined) g.description = String(b.description).slice(0, 200);
-  if (b.emoji) g.emoji = String(b.emoji).slice(0, 8);
+  if (b.emoji) g.emoji = String(b.emoji).slice(0, 20);
   if (/^#[0-9a-f]{6}$/i.test(b.color || '')) g.color = b.color;
   if (b.defaults) g.defaults = cleanSettings(b.defaults, g.defaults);
   if (b.defaultDealerId !== undefined) {

@@ -15,6 +15,7 @@ import EquityPanel from '@/components/EquityPanel.vue';
 import ShareSheet from '@/components/ShareSheet.vue';
 import ShowdownSheet from '@/components/ShowdownSheet.vue';
 import TableMenu from '@/components/TableMenu.vue';
+import Sheet from '@/components/Sheet.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -60,14 +61,19 @@ const totalPot = computed(() => (hand.value ? hand.value.players.reduce((a, p) =
 const shown = ref(0);
 let lastHandNo = null;
 let revealTimer = null;
+let runout = false; // llegaron varias calles de golpe (all-in): cada una sale con su pausa
+const streetLeft = (n) => (n < 3 ? 3 - n : 1); // cartas que faltan para cerrar la calle actual
 function revealStep() {
   if (revealTimer) return;
   const len = hand.value?.board.length || 0;
-  if (shown.value >= len) return;
+  if (shown.value >= len) {
+    runout = false;
+    return;
+  }
   const next = shown.value + 1;
-  // all-in: pausa larga entre calles; si no, cada carta del flop sale seguida
-  const runout = len - shown.value > 1 && next > 3;
-  const delay = runout ? 1300 : next <= 3 ? (next === 1 ? 120 : 420) : 200;
+  let delay;
+  if (next <= 3) delay = next === 1 ? (runout ? 900 : 120) : 450; // flop: carta a carta
+  else delay = runout ? 1800 : 250; // turn / river: en all-in, suspense entre calles
   revealTimer = setTimeout(() => {
     revealTimer = null;
     shown.value = next;
@@ -86,6 +92,7 @@ watch(
     if (lastHandNo === null) shown.value = len; // al entrar a media mano no se anima
     else if (h.no !== lastHandNo || len < shown.value) shown.value = Math.min(len, h.no !== lastHandNo ? 0 : len);
     lastHandNo = h.no;
+    if (len - shown.value > streetLeft(shown.value)) runout = true;
     revealStep();
   },
 );
@@ -149,14 +156,31 @@ const canStart = computed(() => {
   if (!manager.value && !(random.value && mySeat.value)) return false;
   return (offline.value ? activeSeats.value.length : withChips.value.length) >= 2;
 });
-const rebuyRequests = computed(() => (manager.value && !random.value ? (s.value?.seats || []).filter((x) => x.rebuyRequest) : []));
-const canRebuy = computed(() => !!mySeat.value && !offline.value && (!me.value || me.value.folded || !live.value));
-const rebuyLabel = computed(() =>
-  random.value || manager.value ? `Recomprar ${formatChips(s.value.settings.startingChips)}` : `Pedir recompra de ${formatChips(s.value.settings.startingChips)}`,
+// en vivo: peticiones que aprueba el dealer
+const rebuyRequests = computed(() =>
+  manager.value && !random.value ? (s.value?.seats || []).filter((x) => x.rebuyRequest && !x.rebuyRequest.needed) : [],
 );
-async function rebuy() {
-  if (await run('table:rebuy')) toast.success(random.value || manager.value ? 'Fichas añadidas' : 'Recompra pedida al dealer');
+// aleatorio: recompras que votan todos los demás jugadores (se juega con dinero real)
+const voteRequests = computed(() => (s.value?.seats || []).filter((x) => x.rebuyRequest?.needed));
+const canRebuy = computed(() => !!mySeat.value && !offline.value && (!me.value || me.value.folded || !live.value));
+const rebuyLabel = computed(() => (random.value ? 'Pedir recompra' : manager.value ? 'Recomprar' : 'Pedir recompra al dealer'));
+const rebuyOpen = ref(false);
+const rebuyAmount = ref(0);
+const rebuyOptions = computed(() => {
+  const st = s.value.settings.startingChips;
+  return [...new Set([Math.round(st / 2), st, st * 2].filter((v) => v >= s.value.settings.minBet))];
+});
+function rebuy() {
+  rebuyAmount.value = s.value.settings.startingChips;
+  rebuyOpen.value = true;
 }
+async function confirmRebuy() {
+  if (!(await run('table:rebuy', { amount: rebuyAmount.value }))) return;
+  rebuyOpen.value = false;
+  menu.value.open = false;
+  toast.success(random.value ? 'Petición enviada: todos tienen que aceptarla' : manager.value ? 'Fichas añadidas' : 'Recompra pedida al dealer');
+}
+const nameOfSeat = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
 
 // ---------- socket ----------
 let sock;
@@ -285,7 +309,7 @@ const statusLine = computed(() => {
   const h = view.value;
   if (!s.value) return '';
   if (revealing.value) return 'Repartiendo cartas…';
-  if (gameOver.value) return champion.value ? `🏆 ${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
+  if (gameOver.value) return champion.value ? `${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
   if (!h || h.stage === 'done') {
     if (random.value) return nextHandIn.value ? `Siguiente mano en ${nextHandIn.value}s` : 'Esperando jugadores';
     return manager.value ? 'Listo para repartir' : 'Esperando al dealer';
@@ -318,7 +342,7 @@ const myBadge = computed(() => {
         <div class="ellipsis tname">{{ s.name }}</div>
         <div class="sub small">
           <span class="dotc" :class="{ on: connected }"></span>
-          <span class="mbadge">{{ info.icon }} {{ info.short }}</span>
+          <span class="mbadge"><Icon :name="info.icon" :size="13" />{{ info.short }}</span>
           <template v-if="hand">· #{{ hand.no }}</template>
           <template v-if="!offline">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
@@ -372,7 +396,7 @@ const myBadge = computed(() => {
         <b class="num">{{ offline ? 'Tú' : formatChips(myView ? myView.stack : mySeat.chips) }}</b>
         <span v-if="myBadge" class="mb-badge">{{ myBadge }}</span>
         <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
-        <span v-if="!random && s.dealerId === s.me" class="mb-dealer">🎩 Dealer</span>
+        <span v-if="!random && s.dealerId === s.me" class="mb-dealer"><Icon name="dealer" :size="13" />Dealer</span>
         <span class="grow"></span>
         <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
       </div>
@@ -408,9 +432,33 @@ const myBadge = computed(() => {
         </div>
       </TransitionGroup>
 
+      <!-- recompras votadas (aleatorio): todos tienen que aceptar -->
+      <TransitionGroup name="list" tag="div" class="requests" v-if="voteRequests.length">
+        <div v-for="r in voteRequests" :key="r.userId" class="req vote">
+          <Avatar :user="r" :size="30" />
+          <div class="grow small">
+            <div>
+              <b>{{ r.userId === s.me ? 'Tu recompra' : r.displayName }}</b>
+              {{ r.userId === s.me ? 'de' : 'quiere recomprar' }}
+              <b class="num">{{ formatChips(r.rebuyRequest.amount) }}</b>
+            </div>
+            <div class="votes">
+              <span v-for="id in r.rebuyRequest.needed" :key="id" class="vchip" :class="{ ok: r.rebuyRequest.approvals.includes(id) }">
+                <Icon :name="r.rebuyRequest.approvals.includes(id) ? 'check' : 'timer'" :size="11" /> {{ nameOfSeat(id) }}
+              </span>
+            </div>
+          </div>
+          <template v-if="r.rebuyRequest.needed.includes(s.me) && !r.rebuyRequest.approvals.includes(s.me)">
+            <button class="icon-btn ok" :disabled="busy" aria-label="Aceptar" @click="run('table:rebuyVote', { userId: r.userId, approve: true })"><Icon name="check" :size="18" /></button>
+            <button class="icon-btn" :disabled="busy" aria-label="Rechazar" @click="run('table:rebuyVote', { userId: r.userId, approve: false })"><Icon name="x" :size="18" /></button>
+          </template>
+          <button v-else-if="r.userId === s.me" class="btn btn-sm btn-ghost" :disabled="busy" @click="run('table:cancelRebuy')">Cancelar</button>
+        </div>
+      </TransitionGroup>
+
       <!-- controles del dealer (en vivo / sin dinero) -->
       <div v-if="showDealerBar && !gameOver && !myTurn" class="dealer">
-        <div class="dl-tag"><span>🎩</span> Dealer</div>
+        <div class="dl-tag"><Icon name="dealer" :size="15" />Dealer</div>
         <template v-if="!live">
           <button class="btn btn-primary btn-lg grow" :disabled="!canStart || busy" @click="run('dealer:start')">
             <Icon name="play" :size="18" />Repartir mano {{ (s.handNo || 0) + 1 }}
@@ -496,7 +544,27 @@ const myBadge = computed(() => {
       @confirm="onPicked"
       @close="picker.open = false"
     />
-    <ShareSheet :open="showShare" :code="s.code" @close="showShare = false" />
+    <ShareSheet :open="showShare" :code="s.code" invite-friends @close="showShare = false" />
+    <Sheet :open="rebuyOpen" title="Recompra" :width="420" @close="rebuyOpen = false">
+      <p class="muted">
+        {{ random ? 'Como se juega con dinero real, todos los demás jugadores tienen que aceptarla.' : manager ? 'Te sumas las fichas al momento.' : 'El dealer tiene que aprobarla.' }}
+      </p>
+      <div class="rb-opts">
+        <button v-for="v in rebuyOptions" :key="v" class="rb-opt" :class="{ on: rebuyAmount === v }" @click="rebuyAmount = v">
+          <Chip :value="v" :index="rebuyOptions.indexOf(v) + 1" :size="54" />
+          <b class="num">{{ formatChips(v) }}</b>
+        </button>
+      </div>
+      <label class="field">
+        <span>Otra cantidad</span>
+        <input v-model.number="rebuyAmount" class="input num" type="number" :min="s.settings.minBet" inputmode="numeric" />
+      </label>
+      <template #footer>
+        <button class="btn btn-primary btn-lg btn-block" :disabled="busy || !(rebuyAmount >= s.settings.minBet)" @click="confirmRebuy">
+          <Icon name="coins" :size="18" />{{ random ? 'Pedir' : manager ? 'Recomprar' : 'Pedir' }} {{ formatChips(rebuyAmount || 0) }}
+        </button>
+      </template>
+    </Sheet>
     <ShowdownSheet
       :open="showShowdown && manager && hand?.stage === 'showdown'"
       :state="s"
@@ -517,7 +585,8 @@ const myBadge = computed(() => {
 .bar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 8px; }
 .tname { font-weight: 800; font-size: 17px; }
 .sub { display: flex; align-items: center; gap: 6px; color: var(--text-2); flex-wrap: wrap; }
-.mbadge { font-weight: 700; color: var(--text); }
+.mbadge { font-weight: 700; color: var(--text); display: inline-flex; align-items: center; gap: 4px; }
+.mbadge svg { color: var(--gold-2); }
 .dotc { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
 .dotc.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .codebtn {
@@ -564,14 +633,14 @@ const myBadge = computed(() => {
 .mebar b { color: var(--gold-2); font-size: 15px; }
 .mb-badge { min-width: 24px; height: 22px; padding: 0 6px; border-radius: 99px; background: #fff; color: #111; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
 .mb-bet { display: flex; align-items: center; gap: 4px; font-weight: 800; font-size: 13px; padding: 2px 8px 2px 2px; border-radius: 99px; background: rgba(0, 0, 0, 0.4); }
-.mb-dealer { font-size: 12px; font-weight: 700; color: var(--gold-2); }
+.mb-dealer { font-size: 12px; font-weight: 700; color: var(--gold-2); display: inline-flex; align-items: center; gap: 4px; }
 .mb-timer { font-weight: 900; padding: 2px 10px; border-radius: 99px; background: rgba(245, 181, 68, 0.18); color: var(--gold-2); }
 .mb-timer.low { background: rgba(244, 63, 94, 0.25); color: #fecdd3; animation: winpop 0.5s infinite alternate; }
 .dealer {
   display: flex; align-items: center; gap: 10px; padding: 8px; padding-left: 12px; border-radius: 18px;
   background: rgba(22, 31, 69, 0.85); border: 1px solid rgba(245, 181, 68, 0.25);
 }
-.dl-tag { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold-2); white-space: nowrap; }
+.dl-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold-2); white-space: nowrap; }
 .icon-btn.big { width: 54px; height: 54px; border-radius: 16px; }
 .icon-btn.ok { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.5); color: #86efac; }
 .txt { color: var(--text); }
@@ -588,6 +657,16 @@ const myBadge = computed(() => {
 }
 .requests { display: flex; flex-direction: column; gap: 6px; }
 .req { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 16px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); }
+.req.vote { background: rgba(245, 181, 68, 0.08); border-color: rgba(245, 181, 68, 0.35); }
+.votes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.vchip { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); color: var(--text-3); }
+.vchip.ok { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+.rb-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin: 14px 0; }
+.rb-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 16px;
+  background: rgba(5, 9, 28, 0.45); border: 1px solid var(--line); transition: all 0.25s var(--spring);
+}
+.rb-opt.on { border-color: var(--gold); background: rgba(245, 181, 68, 0.1); transform: translateY(-2px); }
 .gameover {
   padding: 14px; border-radius: 20px; display: flex; flex-direction: column; gap: 10px;
   background: radial-gradient(circle at 0% 0%, rgba(245, 181, 68, 0.22), transparent 60%), rgba(22, 31, 69, 0.92);

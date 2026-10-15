@@ -12,6 +12,7 @@ const routes = [
   { path: '/grupos/unirse/:code', name: 'group-join', component: () => import('./views/GroupsView.vue') },
   { path: '/grupos/:id', name: 'group', component: () => import('./views/GroupView.vue') },
   { path: '/ranking', name: 'rankings', component: () => import('./views/RankingsView.vue') },
+  { path: '/amigos', name: 'friends', component: () => import('./views/FriendsView.vue') },
   { path: '/perfil', name: 'profile', component: () => import('./views/ProfileView.vue') },
   { path: '/u/:username', name: 'user', component: () => import('./views/UserView.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },

@@ -15,3 +15,12 @@ export async function broadcast(table) {
 export function notifyUser(userId, event, payload) {
   io?.to(`user:${userId}`).emit(event, payload);
 }
+
+// ---------- quién está conectado (para la lista de amigos) ----------
+const online = new Map(); // userId -> nº de pestañas abiertas
+export function markUserOnline(userId, delta) {
+  const n = (online.get(userId) || 0) + delta;
+  if (n <= 0) online.delete(userId);
+  else online.set(userId, n);
+}
+export const isUserOnline = (userId) => online.has(String(userId));

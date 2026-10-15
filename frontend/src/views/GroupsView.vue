@@ -2,11 +2,12 @@
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
-import { toast } from '@/lib/store.js';
+import { toast, ask } from '@/lib/store.js';
 import { formatChips, modeInfo } from '@/lib/format.js';
-import Icon from '@/components/Icon.vue';
+import Icon, { GROUP_ICONS } from '@/components/Icon.vue';
 import Sheet from '@/components/Sheet.vue';
 import SettingsForm from '@/components/SettingsForm.vue';
+import QrScanner from '@/components/QrScanner.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -14,10 +15,22 @@ const groups = ref(null);
 const showCreate = ref(false);
 const joinCode = ref('');
 const loading = ref(false);
+const scanning = ref(false);
 
-const EMOJIS = ['♠️', '♥️', '♦️', '♣️', '🃏', '🎰', '👑', '🔥', '🦈', '🐺', '🍻', '💎'];
+async function removeGroup(g) {
+  if (!(await ask({ title: `¿Eliminar "${g.name}"?`, message: 'Se cierra su mesa y desaparece para todos. Las manos jugadas siguen en el ranking general.', confirmLabel: 'Eliminar grupo', danger: true }))) return;
+  try {
+    await api.del('/groups/' + g.id);
+    groups.value = groups.value.filter((x) => x.id !== g.id);
+    toast.success('Grupo eliminado');
+  } catch (e) {
+    toast.error(e.message);
+  }
+}
+
+const EMOJIS = GROUP_ICONS;
 const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
-const form = ref({ name: '', description: '', emoji: '♠️', color: '#10b981', defaults: { minBet: 100, maxBet: 0, startingChips: 10000, mode: 'live', chips: [] } });
+const form = ref({ name: '', description: '', emoji: 'spade', color: '#10b981', defaults: { minBet: 100, maxBet: 0, startingChips: 10000, mode: 'live', chips: [] } });
 
 async function load() {
   groups.value = (await api.get('/groups')).groups;
@@ -71,6 +84,7 @@ async function join() {
       <Icon name="link" />
       <input v-model="joinCode" class="input input-code grow" maxlength="8" placeholder="CÓDIGO DE GRUPO" />
       <button class="btn">Unirme</button>
+      <button type="button" class="icon-btn" title="Escanear QR" @click="scanning = true"><Icon name="camera" :size="18" /></button>
     </form>
 
     <div v-if="groups === null" class="grid grid-2" style="margin-top: 16px">
@@ -78,22 +92,23 @@ async function join() {
       <div class="skeleton" style="height: 150px"></div>
     </div>
     <div v-else-if="!groups.length" class="card empty" style="margin-top: 16px">
-      <div class="big">👥</div>
+      <div class="big"><Icon name="users" :size="40" :stroke="1.6" /></div>
       Aún no tienes grupos. ¡Crea el primero e invita a tus amigos!
     </div>
     <TransitionGroup v-else tag="div" name="list" class="grid grid-2 list">
       <RouterLink v-for="g in groups" :key="g.id" :to="`/grupos/${g.id}`" class="card hover gcard" :style="{ '--gc': g.color }">
         <div class="row">
-          <span class="ge">{{ g.emoji }}</span>
+          <span class="ge"><Icon :name="g.emoji || 'spade'" :size="24" /></span>
           <div class="grow">
             <h3 class="ellipsis">{{ g.name }}</h3>
             <div class="small muted">{{ g.members }} miembros</div>
           </div>
           <span v-if="g.activeTableCode" class="badge badge-green">● En juego</span>
+          <button v-if="g.isOwner" class="icon-btn del" title="Eliminar grupo" @click.prevent.stop="removeGroup(g)"><Icon name="trash" :size="16" /></button>
         </div>
         <p v-if="g.description" class="desc muted small">{{ g.description }}</p>
         <div class="row tags">
-          <span class="badge">{{ modeInfo(g.defaults.mode).icon }} {{ modeInfo(g.defaults.mode).short }}</span>
+          <span class="badge"><Icon :name="modeInfo(g.defaults.mode).icon" :size="12" />{{ modeInfo(g.defaults.mode).short }}</span>
           <template v-if="g.defaults.mode !== 'offline'">
             <span class="badge">Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }}</span>
             <span class="badge">{{ formatChips(g.defaults.startingChips) }} fichas</span>
@@ -105,7 +120,7 @@ async function join() {
     <Sheet :open="showCreate" title="Nuevo grupo" :width="560" @close="showCreate = false">
       <form class="stack" @submit.prevent="create">
         <div class="preview" :style="{ '--gc': form.color }">
-          <span class="ge big">{{ form.emoji }}</span>
+          <span class="ge big"><Icon :name="form.emoji" :size="30" /></span>
           <b>{{ form.name || 'Nombre del grupo' }}</b>
         </div>
         <label class="field">
@@ -119,7 +134,7 @@ async function join() {
         <div class="field">
           <span>Icono</span>
           <div class="picker">
-            <button v-for="e in EMOJIS" :key="e" type="button" class="pk" :class="{ on: form.emoji === e }" @click="form.emoji = e">{{ e }}</button>
+            <button v-for="e in EMOJIS" :key="e" type="button" class="pk" :class="{ on: form.emoji === e }" @click="form.emoji = e"><Icon :name="e" :size="20" /></button>
           </div>
         </div>
         <div class="field">
@@ -134,6 +149,7 @@ async function join() {
         <button class="btn btn-primary btn-lg btn-block" :disabled="loading">Crear grupo</button>
       </form>
     </Sheet>
+    <QrScanner :open="scanning" @close="scanning = false" />
   </div>
 </template>
 
@@ -141,6 +157,9 @@ async function join() {
 .joinbar { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 18px; }
 .joinbar .input { height: 44px; font-size: 16px; }
 .joinbar svg { color: var(--text-3); flex: none; }
+.joinbar .icon-btn svg { color: var(--text); }
+.del { width: 34px; height: 34px; border-radius: 10px; flex: none; }
+.del:hover { background: rgba(244, 63, 94, 0.2); color: #fecdd3; }
 .list { margin-top: 16px; }
 .gcard { background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--gc) 26%, transparent), transparent 55%), var(--surface); display: flex; flex-direction: column; gap: 10px; }
 .gcard h3 { font-size: 18px; font-weight: 800; }

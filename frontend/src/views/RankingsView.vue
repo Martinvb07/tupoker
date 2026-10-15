@@ -4,6 +4,7 @@ import { api } from '@/lib/api.js';
 import { formatChips } from '@/lib/format.js';
 import Segmented from '@/components/Segmented.vue';
 import RankingList from '@/components/RankingList.vue';
+import Icon from '@/components/Icon.vue';
 
 const scope = ref('users');
 const metric = ref('net');
@@ -62,11 +63,11 @@ watch(
       <div v-else key="g">
         <Segmented v-model="gmetric" :options="GMETRICS" scroll />
         <div v-if="groups === null" class="skeleton" style="height: 300px; margin-top: 20px"></div>
-        <div v-else-if="!groups.length" class="card empty" style="margin-top: 20px"><div class="big">👥</div>Aún no hay grupos con manos jugadas.</div>
+        <div v-else-if="!groups.length" class="card empty" style="margin-top: 20px"><div class="big"><Icon name="users" :size="40" :stroke="1.6" /></div>Aún no hay grupos con manos jugadas.</div>
         <TransitionGroup v-else tag="div" name="list" class="glist">
           <div v-for="(r, i) in groups" :key="r.group.id" class="grow-row card" :style="{ '--gc': r.group.color }">
             <span class="n num" :class="'n' + (i + 1)">{{ i + 1 }}</span>
-            <span class="ge">{{ r.group.emoji }}</span>
+            <span class="ge"><Icon :name="r.group.emoji || 'spade'" :size="24" /></span>
             <div class="grow">
               <b class="ellipsis">{{ r.group.name }}</b>
               <div class="small faint">{{ r.players }} jugadores · {{ r.hands }} manos · {{ r.sessions }} sesiones</div>

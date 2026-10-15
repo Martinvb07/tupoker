@@ -5,7 +5,7 @@ import { User } from './models.js';
 import { getTable, markOnline, viewFor, canManage, GameError } from './game/manager.js';
 import * as engine from './game/engine.js';
 import { commit, schedule } from './game/autopilot.js';
-import { setIO, broadcast, roomOf } from './hub.js';
+import { setIO, broadcast, roomOf, notifyUser, markUserOnline } from './hub.js';
 import { cleanSettings, seatFor, closeTableNow } from './routes/tables.js';
 
 export function initSocket(httpServer) {
@@ -25,6 +25,7 @@ export function initSocket(httpServer) {
     const uid = socket.data.userId;
     socket.join(`user:${uid}`);
     socket.data.tables = new Set();
+    markUserOnline(uid, 1);
 
     // Ejecuta una operación sobre la mesa, guarda y emite el nuevo estado.
     // manage: solo quien gestiona la mesa (dealer; en modo aleatorio, el anfitrión).
@@ -80,6 +81,7 @@ export function initSocket(httpServer) {
     });
 
     socket.on('disconnect', async () => {
+      markUserOnline(uid, -1);
       for (const code of socket.data.tables) {
         markOnline(code, uid, -1);
         const t = await getTable(code);
@@ -105,12 +107,13 @@ export function initSocket(httpServer) {
 
     handle('table:leave', async (t) => {
       const others = t.seats.filter((s) => s.userId !== uid);
-      if (t.dealerId === uid && others.length) {
-        // en aleatorio no hay dealer real: el rol pasa solo al siguiente; en vivo hay que cederlo
-        if (engine.modeOf(t) !== 'random') throw new GameError('Pasa el rol de dealer a otro jugador antes de salir');
-        t.dealerId = others[0].userId;
+      // quien se va nunca se queda atrapado: el rol de dealer / anfitrión pasa al siguiente
+      const heir = others.find((s) => s.status === 'active') || others[0];
+      if (heir && t.dealerId === uid) {
+        t.dealerId = heir.userId;
+        if (engine.modeOf(t) !== 'random') notifyUser(heir.userId, 'table:notice', { message: `Ahora eres el dealer de ${t.name}` });
       }
-      if (t.ownerId === uid && others.length && engine.modeOf(t) === 'random') t.ownerId = others[0].userId;
+      if (heir && t.ownerId === uid) t.ownerId = heir.userId;
       engine.foldOut(t, uid);
       t.seats = others;
       if (t.hand) t.hand.players.forEach((p) => p.userId === uid && (p.folded = true));
@@ -126,18 +129,38 @@ export function initSocket(httpServer) {
       engine.foldOut(t, uid);
     });
 
-    // Recompra: en aleatorio es inmediata; en vivo la aprueba el dealer
-    handle('table:rebuy', (t) => {
+    // Recompra. Se juega con dinero real, así que nadie se pone fichas solo:
+    //  - aleatorio: la tienen que aceptar todos los demás jugadores de la mesa
+    //  - en vivo: la aprueba el dealer
+    handle('table:rebuy', (t, { amount }) => {
       const seat = engine.checkRebuy(t, uid);
-      if (engine.modeOf(t) === 'random' || canManage(t, uid)) engine.applyRebuy(t, uid);
-      else {
-        if (seat.rebuyRequest) throw new GameError('Ya pediste una recompra, espera al dealer');
-        seat.rebuyRequest = { amount: t.settings.startingChips, at: Date.now() };
-      }
+      if (seat.rebuyRequest) throw new GameError('Ya tienes una recompra pendiente');
+      const amt = Math.floor(Number(amount) || t.settings.startingChips);
+      if (!(amt >= t.settings.minBet) || amt > t.settings.startingChips * 10) throw new GameError('Cantidad de recompra no válida');
+      const others = t.seats.filter((s) => s.userId !== uid).map((s) => s.userId);
+      if (engine.modeOf(t) === 'random') {
+        seat.rebuyRequest = { amount: amt, at: Date.now(), needed: others, approvals: [] };
+        for (const id of others) notifyUser(id, 'table:notice', { message: `${seat.displayName} pide recomprar ${amt}. Acepta o rechaza en la mesa.` });
+      } else if (canManage(t, uid) || !others.length) engine.applyRebuy(t, uid, amt);
+      else seat.rebuyRequest = { amount: amt, at: Date.now() };
     });
     handle('table:cancelRebuy', (t) => {
       const seat = mySeat(t);
       if (seat) delete seat.rebuyRequest;
+    });
+    // Voto de los demás jugadores (modo aleatorio). Un "no" cancela la petición.
+    handle('table:rebuyVote', (t, { userId, approve }) => {
+      const seat = t.seats.find((s) => s.userId === userId);
+      const req = seat?.rebuyRequest;
+      if (!req?.needed) throw new GameError('Esa recompra ya no está pendiente');
+      if (!req.needed.includes(uid)) throw new GameError('No te toca votar esta recompra');
+      if (!approve) {
+        delete seat.rebuyRequest;
+        const me = mySeat(t);
+        notifyUser(userId, 'table:notice', { message: `${me?.displayName || 'Un jugador'} rechazó tu recompra`, type: 'error' });
+        return;
+      }
+      if (!req.approvals.includes(uid)) req.approvals.push(uid);
     });
 
     // ---------- Gestión (dealer / anfitrión) ----------
@@ -156,6 +179,7 @@ export function initSocket(httpServer) {
     handle('dealer:rebuy', (t, { userId, approve }) => {
       const seat = t.seats.find((s) => s.userId === userId);
       if (!seat?.rebuyRequest) throw new GameError('No hay recompra pendiente');
+      if (seat.rebuyRequest.needed) throw new GameError('Esta recompra la votan todos los jugadores');
       if (approve) engine.applyRebuy(t, userId, seat.rebuyRequest.amount);
       else delete seat.rebuyRequest;
     }, { manage: true });
@@ -167,6 +191,7 @@ export function initSocket(httpServer) {
     }, { manage: true });
 
     handle('dealer:chips', (t, { userId, amount, mode }) => {
+      if (engine.modeOf(t) === 'random') throw new GameError('En modo aleatorio las recompras se aprueban entre todos');
       const seat = t.seats.find((s) => s.userId === userId);
       if (!seat) throw new GameError('Jugador no encontrado');
       const p = engine.isHandLive(t) ? engine.getPlayer(t.hand, userId) : null;
@@ -202,7 +227,11 @@ export function initSocket(httpServer) {
       t.dealerId = userId;
     });
 
-    handle('dealer:close', (t) => closeTableNow(t), { manage: true });
+    // cerrar la mesa: el dealer / anfitrión o quien la creó
+    handle('dealer:close', (t) => {
+      if (!canManage(t, uid) && t.ownerId !== uid) throw new GameError('Solo el creador o el dealer pueden cerrar la mesa');
+      return closeTableNow(t);
+    });
 
     socket.on('table:reseat', async ({ code } = {}, ack = () => {}) => {
       // re-sentarse tras haber salido (mismo flujo que /join)

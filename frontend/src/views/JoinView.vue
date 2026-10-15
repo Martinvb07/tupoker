@@ -49,7 +49,7 @@ async function join() {
 <template>
   <div class="page narrow">
     <div v-if="error" class="card empty rise">
-      <div class="big">🚫</div>
+      <div class="big"><Icon name="ban" :size="40" :stroke="1.6" /></div>
       <h2>{{ error }}</h2>
       <RouterLink to="/" class="btn" style="margin-top: 16px">Volver al inicio</RouterLink>
     </div>
@@ -69,7 +69,7 @@ async function join() {
       </div>
 
       <div class="facts">
-        <div class="wide"><span>Modo</span><b>{{ mode.icon }} {{ mode.label }}</b><small class="muted">{{ mode.desc }}</small></div>
+        <div class="wide"><span>Modo</span><b class="row" style="gap: 6px"><Icon :name="mode.icon" :size="16" />{{ mode.label }}</b><small class="muted">{{ mode.desc }}</small></div>
         <template v-if="table.settings.mode !== 'offline'">
           <div><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
           <div><span>Máxima</span><b class="num">{{ table.settings.maxBet ? formatChips(table.settings.maxBet) : 'Sin límite' }}</b></div>

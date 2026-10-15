@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import groupRoutes from './routes/groups.js';
 import tableRoutes from './routes/tables.js';
+import friendRoutes from './routes/friends.js';
 import { userRanking, groupRanking, userStats } from './stats.js';
 import { initSocket } from './socket.js';
 
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/tables', tableRoutes);
+app.use('/api/friends', friendRoutes);
 
 app.get('/api/rankings/users', requireAuth, ah(async (req, res) => {
   res.json({ ranking: await userRanking({ sort: req.query.sort }) });

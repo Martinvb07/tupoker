@@ -2,17 +2,19 @@
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
-import { auth, toast } from '@/lib/store.js';
+import { auth, toast, ask } from '@/lib/store.js';
 import { formatChips, modeInfo } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import StatTiles from '@/components/StatTiles.vue';
+import QrScanner from '@/components/QrScanner.vue';
 
 const router = useRouter();
 const tables = ref(null);
 const groups = ref(null);
 const stats = ref(null);
 const joinCode = ref('');
+const scanning = ref(false);
 
 const hour = new Date().getHours();
 const greet = hour < 6 ? 'Buenas noches' : hour < 13 ? 'Buenos días' : hour < 20 ? 'Buenas tardes' : 'Buenas noches';
@@ -25,7 +27,7 @@ onMounted(async () => {
 });
 
 async function closeTable(t) {
-  if (!confirm(`¿Cerrar "${t.name}" para todos? Las manos jugadas se guardan.`)) return;
+  if (!(await ask({ title: `¿Cerrar "${t.name}"?`, message: 'Se cierra para todos los jugadores. Las manos jugadas se guardan.', confirmLabel: 'Cerrar mesa', danger: true }))) return;
   try {
     await api.post(`/tables/${t.code}/close`);
     tables.value = tables.value.filter((x) => x.code !== t.code);
@@ -47,9 +49,10 @@ function join() {
     <div class="page-head rise">
       <div>
         <div class="eyebrow">{{ greet }}</div>
-        <h1>{{ auth.user.displayName }} 👋</h1>
+        <h1>{{ auth.user.displayName }}</h1>
         <p>¿Listo para la próxima mano?</p>
       </div>
+      <RouterLink to="/perfil" class="me-link" aria-label="Mi perfil"><Avatar :user="auth.user" :size="46" ring /></RouterLink>
     </div>
 
     <div class="grid quick">
@@ -68,6 +71,7 @@ function join() {
             <input v-model="joinCode" class="input input-code" maxlength="6" placeholder="ABC123" />
             <button class="btn btn-primary" aria-label="Unirse"><Icon name="right" /></button>
           </div>
+          <button type="button" class="btn btn-sm scan" @click="scanning = true"><Icon name="camera" :size="16" />Escanear QR</button>
         </div>
       </form>
     </div>
@@ -85,11 +89,11 @@ function join() {
         <RouterLink v-for="t in tables" :key="t.code" :to="t.seated ? `/mesa/${t.code}` : `/unirse/${t.code}`" class="card hover tcard">
           <div class="row-between">
             <div class="row grow">
-              <span v-if="t.group" class="gemoji" :style="{ background: t.group.color + '33' }">{{ t.group.emoji }}</span>
+              <span v-if="t.group" class="gemoji" :style="{ background: t.group.color + '33' }"><Icon :name="t.group.emoji || 'spade'" :size="20" /></span>
               <div class="grow">
                 <h3 class="ellipsis">{{ t.name }}</h3>
                 <div class="small muted">
-                  {{ modeInfo(t.settings.mode).icon }} {{ modeInfo(t.settings.mode).short }}
+                  <Icon :name="modeInfo(t.settings.mode).icon" :size="13" class="inl" /> {{ modeInfo(t.settings.mode).short }}
                   <template v-if="t.settings.mode !== 'offline'">· Ciegas {{ formatChips(Math.max(1, Math.floor(t.settings.minBet / 2))) }}/{{ formatChips(t.settings.minBet) }}</template>
                   · {{ t.players }} jugadores
                 </div>
@@ -116,12 +120,12 @@ function join() {
         <RouterLink to="/grupos" class="btn btn-sm btn-ghost">Ver todos <Icon name="right" :size="16" /></RouterLink>
       </div>
       <div v-if="groups && !groups.length" class="card empty">
-        <div class="big">👥</div>
+        <div class="big"><Icon name="users" :size="40" :stroke="1.6" /></div>
         Crea un grupo con tus amigos para guardar la mesa y tener ranking propio.
       </div>
       <div v-else class="hscroll">
         <RouterLink v-for="g in groups || []" :key="g.id" :to="`/grupos/${g.id}`" class="gcard card hover" :style="{ '--gc': g.color }">
-          <span class="ge">{{ g.emoji }}</span>
+          <span class="ge"><Icon :name="g.emoji || 'spade'" :size="28" /></span>
           <b class="ellipsis">{{ g.name }}</b>
           <span class="small muted">{{ g.members }} miembros</span>
           <span v-if="g.activeTableCode" class="badge badge-green live">● En juego</span>
@@ -135,6 +139,7 @@ function join() {
       </div>
       <StatTiles :stats="stats" />
     </section>
+    <QrScanner :open="scanning" @close="scanning = false" />
   </div>
 </template>
 
@@ -146,6 +151,11 @@ function join() {
 .qi.blue { color: #fff; background: linear-gradient(135deg, #818cf8, #4f46e5); box-shadow: 0 10px 24px -10px rgba(99, 102, 241, 0.8); }
 .qa-create { background: radial-gradient(circle at 0% 0%, rgba(245, 181, 68, 0.16), transparent 60%), var(--surface); }
 .join { margin-top: 8px; }
+.scan { margin-top: 8px; width: 100%; }
+.page-head { flex-wrap: nowrap; align-items: center; }
+.me-link { flex: none; transition: transform 0.3s var(--spring); }
+.me-link:hover { transform: scale(1.06); }
+@media (min-width: 900px) { .me-link { display: none; } }
 .join .input { height: 44px; font-size: 17px; }
 .join .btn { height: 44px; width: 48px; padding: 0; }
 .sec { margin-top: 30px; }

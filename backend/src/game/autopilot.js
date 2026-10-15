@@ -17,6 +17,7 @@ const slot = (code) => {
 };
 
 export function commit(table) {
+  if (table.status !== 'closed') engine.settleRebuyVotes(table);
   schedule(table);
   save(table);
   broadcast(table);

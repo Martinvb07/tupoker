@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { auth, logout, toast } from '@/lib/store.js';
+import { auth, logout, toast, social } from '@/lib/store.js';
+import { api } from '@/lib/api.js';
 import { getSocket, resetSocket } from '@/lib/socket.js';
 import Toasts from '@/components/Toasts.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import Avatar from '@/components/Avatar.vue';
 import Icon from '@/components/Icon.vue';
 
@@ -12,22 +14,41 @@ const router = useRouter();
 
 const nav = [
   { to: '/', label: 'Inicio', icon: 'home', name: 'home' },
-  { to: '/grupos', label: 'Grupos', icon: 'users', name: 'groups' },
+  { to: '/amigos', label: 'Amigos', icon: 'user', name: 'friends', badge: true },
   { to: '/nueva-mesa', label: 'Mesa', icon: 'plus', name: 'create', primary: true },
+  { to: '/grupos', label: 'Grupos', icon: 'users', name: 'groups' },
   { to: '/ranking', label: 'Ranking', icon: 'trophy', name: 'rankings' },
-  { to: '/perfil', label: 'Perfil', icon: 'user', name: 'profile' },
 ];
 const showNav = computed(() => auth.user && !route.meta.guest && !route.meta.immersive);
 const isActive = (item) => route.name === item.name || (item.name === 'groups' && route.name === 'group');
 
-function onTableOpened(p) {
-  toast(`${p.by} abrió la mesa de ${p.group}`, 'info', 6000);
+// avisos en tiempo real (llegan estés donde estés)
+const handlers = {
+  'group:table-opened': (p) => toast(`${p.by} abrió la mesa de ${p.group}`, 'info', 8000, { label: 'Entrar', to: `/mesa/${p.code}` }),
+  'table:invite': (p) => toast(`${p.by} te invita a ${p.name}`, 'info', 12000, { label: 'Unirme', to: `/unirse/${p.code}` }),
+  'friend:request': (p) => {
+    social.incoming++;
+    toast(`${p.from} quiere ser tu amigo`, 'info', 8000, { label: 'Ver', to: '/amigos' });
+  },
+  'friend:accepted': (p) => toast(`${p.by} aceptó tu solicitud de amistad`, 'success'),
+  'table:notice': (p) => toast(p.message, p.type || 'info', 6000),
+};
+async function refreshSocial() {
+  try {
+    social.incoming = (await api.get('/friends')).incoming.length;
+  } catch { /* sin conexión */ }
 }
 watch(
   () => auth.user?.id,
   (id) => {
-    if (id) getSocket().on('group:table-opened', onTableOpened);
-    else resetSocket();
+    if (id) {
+      const s = getSocket();
+      for (const [ev, fn] of Object.entries(handlers)) {
+        s.off(ev, fn);
+        s.on(ev, fn);
+      }
+      refreshSocial();
+    } else resetSocket();
   },
   { immediate: true },
 );
@@ -50,6 +71,7 @@ onMounted(() => document.body.classList.add('ready'));
         <nav class="links">
           <RouterLink v-for="n in nav" :key="n.to" :to="n.to" class="lnk" :class="{ on: isActive(n), primary: n.primary }">
             <Icon :name="n.icon" :size="18" />{{ n.primary ? 'Nueva mesa' : n.label }}
+            <i v-if="n.badge && social.incoming" class="nbadge">{{ social.incoming }}</i>
           </RouterLink>
         </nav>
         <div class="me">
@@ -70,12 +92,13 @@ onMounted(() => document.body.classList.add('ready'));
 
     <nav v-if="showNav" class="tabbar">
       <RouterLink v-for="n in nav" :key="n.to" :to="n.to" class="tab" :class="{ on: isActive(n), primary: n.primary }">
-        <span class="ti"><Icon :name="n.icon" :size="n.primary ? 24 : 21" /></span>
+        <span class="ti"><Icon :name="n.icon" :size="n.primary ? 24 : 21" /><i v-if="n.badge && social.incoming" class="nbadge">{{ social.incoming }}</i></span>
         <span v-if="!n.primary" class="tl">{{ n.label }}</span>
       </RouterLink>
     </nav>
 
     <Toasts />
+    <ConfirmDialog />
   </div>
 </template>
 
@@ -102,7 +125,9 @@ onMounted(() => document.body.classList.add('ready'));
   background: rgba(17, 24, 56, 0.86); backdrop-filter: blur(16px); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg);
 }
 .tab { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--text-3); font-size: 11px; font-weight: 600; transition: color 0.2s; }
-.tab .ti { display: grid; place-items: center; transition: transform 0.35s var(--spring); }
+.tab .ti { position: relative; display: grid; place-items: center; transition: transform 0.35s var(--spring); }
+.nbadge { position: absolute; top: -6px; right: -10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--red); color: #fff; font-size: 11px; font-style: normal; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+.lnk { position: relative; }
 .tab.on { color: var(--gold-2); }
 .tab.on .ti { transform: translateY(-2px); }
 .tab.primary .ti {
