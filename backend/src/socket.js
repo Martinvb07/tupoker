@@ -147,6 +147,7 @@ export function initSocket(httpServer) {
       if (seat) seat.timeouts = 0;
     });
     handle('table:cards', (t, { cards }) => engine.setHoleCards(t, uid, cards));
+    handle('table:show', (t) => engine.showCards(t, uid));
 
     handle('table:sitout', (t, { sitout }) => {
       const seat = mySeat(t);

@@ -190,3 +190,14 @@ test('en vivo: la recompra pausa la partida y no se aplica sola aunque voten tod
   assert.equal(t.seats[0].chips, 1500);
   assert.equal(e.pausedBy(t), null);
 });
+
+test('al terminar la mano un jugador puede enseñar sus cartas', () => {
+  const t = mesa(2);
+  t.settings.mode = 'random';
+  e.startHand(t);
+  assert.throws(() => e.showCards(t, 'p0'), /termina la mano/);
+  e.act(t, t.hand.toAct, 'fold');
+  const winner = t.hand.players.find((p) => !p.folded).userId;
+  e.showCards(t, winner);
+  assert.deepEqual(t.hand.shown, [winner]);
+});

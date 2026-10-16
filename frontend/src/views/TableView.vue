@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { getSocket, emit, connected } from '@/lib/socket.js';
 import { toast } from '@/lib/store.js';
 import { formatChips, STAGE_LABEL, modeInfo } from '@/lib/format.js';
+import { describeCurrent, SUIT_SYMBOL } from '@shared/poker.js';
 import Icon from '@/components/Icon.vue';
 import Seat from '@/components/Seat.vue';
 import Avatar from '@/components/Avatar.vue';
@@ -139,7 +140,38 @@ const layout = computed(() => {
   return ordered.map((seat, i) => pos(seat, Math.PI / 2 + (i * 2 * Math.PI) / n, 47, 40));
 });
 
-const handNames = computed(() => view.value?.handNames || {});
+// jugada de cada uno: la del showdown y la de quien enseña sus cartas al final
+const handNames = computed(() => {
+  const h = view.value;
+  const names = { ...(h?.handNames || {}) };
+  for (const p of h?.players || []) {
+    if (p.shown && p.cards?.length === 2 && !names[p.userId]) names[p.userId] = describeCurrent(p.cards, h.board)?.name || '';
+  }
+  return names;
+});
+
+// ---------- enseñar cartas al terminar la mano ----------
+const myCardsSeen = computed(() => {
+  const r = hand.value?.result;
+  return !!me.value && (me.value.shown || (r?.how === 'showdown' && !me.value.folded));
+});
+const canShow = computed(() => hand.value?.stage === 'done' && !revealing.value && myCards.value.length === 2 && !myCardsSeen.value);
+const cardText = (c) => (c[0] === 'T' ? '10' : c[0]) + SUIT_SYMBOL[c[1]];
+async function showMine() {
+  if (await run('table:show')) toast.success('Has enseñado tus cartas a la mesa');
+}
+// aviso cuando otro jugador enseña las suyas
+watch(
+  () => (hand.value?.players || []).filter((p) => p.shown).map((p) => p.userId).join(),
+  (now, before) => {
+    const prev = new Set((before || '').split(',').filter(Boolean));
+    for (const p of hand.value?.players || []) {
+      if (p.shown && !prev.has(p.userId) && p.userId !== s.value?.me && p.cards?.length === 2) {
+        toast(`${nameOf(p.userId)} enseña: ${p.cards.map(cardText).join(' ')}`, 'info', 5000);
+      }
+    }
+  },
+);
 
 // ---------- cartas boca arriba (all-in / showdown) ----------
 const stripFinal = computed(() => !revealing.value && view.value?.stage === 'done');
@@ -538,6 +570,14 @@ const myBadge = computed(() => {
         <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
       </div>
 
+      <!-- enseñar tus cartas al terminar la mano -->
+      <Transition name="slide">
+        <button v-if="canShow" class="btn btn-block show-btn" :disabled="busy" @click="showMine">
+          <Icon name="eye" :size="18" />Mostrar mis cartas
+          <span class="mini-cards"><PlayingCard :card="myCards[0]" size="xs" /><PlayingCard :card="myCards[1]" size="xs" /></span>
+        </button>
+      </Transition>
+
       <!-- partida terminada -->
       <Transition name="slide">
         <div v-if="gameOver" class="gameover">
@@ -866,6 +906,8 @@ const myBadge = computed(() => {
   80% { transform: translate(-50%, -36px) scale(1); opacity: 1; }
   100% { transform: translate(-50%, -54px); opacity: 0; }
 }
+.show-btn { height: 52px; border-color: rgba(167, 139, 250, 0.5); background: rgba(167, 139, 250, 0.14); }
+.show-btn .mini-cards { display: inline-flex; gap: 3px; margin-left: 4px; }
 .paused-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px; font-weight: 700; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px dashed rgba(245, 181, 68, 0.4); }
 .req.vote { background: rgba(245, 181, 68, 0.08); border-color: rgba(245, 181, 68, 0.35); }
 .votes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }

@@ -531,6 +531,16 @@ export function settleRebuyVotes(table) {
   return applied;
 }
 
+/** Al terminar la mano, un jugador puede enseñar sus cartas a la mesa (p. ej. tras ganar porque todos se retiraron). */
+export function showCards(table, userId) {
+  const hand = table.hand;
+  if (!hand || hand.stage !== 'done') fail('Solo puedes enseñar tus cartas cuando termina la mano');
+  const p = getPlayer(hand, userId);
+  if (!p) fail('No jugaste esta mano');
+  if (p.cards.length !== 2) fail('La app no tiene tus cartas de esta mano');
+  hand.shown = [...new Set([...(hand.shown || []), userId])];
+}
+
 /** En vivo, una recompra pendiente pausa la partida hasta que se resuelve. */
 export function pausedBy(table) {
   if (modeOf(table) !== 'live') return null;

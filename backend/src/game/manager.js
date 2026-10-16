@@ -203,7 +203,9 @@ export function viewFor(table, userId) {
             last: p.last,
             won: p.won || 0,
             hasCards: p.cards.length === 2,
-            cards: p.userId === userId || (reveal && !p.folded) ? p.cards : [],
+            // se ven: las tuyas, las de quien llega al showdown y las que alguien decide enseñar
+            cards: p.userId === userId || (reveal && !p.folded) || hand.shown?.includes(p.userId) ? p.cards : [],
+            shown: !!hand.shown?.includes(p.userId),
           })),
         }
       : null,

@@ -89,6 +89,7 @@ const lastLabel = computed(() => {
     <Transition name="pop">
       <div v-if="lastLabel && hand?.stage !== 'done'" :key="lastLabel" class="action" :class="player.last.type">{{ lastLabel }}</div>
       <div v-else-if="won" class="action win"><Icon v-if="mode === 'offline'" name="trophy" :size="11" /> {{ mode === 'offline' ? 'Gana' : '+' + formatChips(player.won) }}</div>
+      <div v-else-if="player?.shown && hand?.stage === 'done'" class="action shown">Enseña</div>
       <div v-else-if="seat.status === 'sitout'" class="action muted">Fuera</div>
     </Transition>
     <div v-if="handName" class="hname">{{ handName }}</div>
@@ -167,6 +168,8 @@ const lastLabel = computed(() => {
 .action.bet, .action.raise { background: #b45309; }
 .action.allin { background: linear-gradient(90deg, #db2777, #9333ea); }
 .action.win { background: linear-gradient(90deg, #16a34a, #22c55e); }
+.action.shown { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+.seat.folded:has(.action.shown) { opacity: 1; filter: none; }
 .action.muted { background: #334155; color: var(--text-2); }
 .hname { margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #fde68a; text-align: center; max-width: 110px; line-height: 1.15; text-shadow: 0 1px 3px #000; }
 .bet {
