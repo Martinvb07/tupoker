@@ -8,6 +8,9 @@ import { commit, schedule } from './game/autopilot.js';
 import { setIO, broadcast, roomOf, notifyUser, markUserOnline } from './hub.js';
 import { cleanSettings, seatFor, closeTableNow } from './routes/tables.js';
 
+// emojis permitidos como reacción en la mesa (los mismos que ofrece el selector del cliente)
+export const REACTIONS = new Set(['😂', '🔥', '😎', '😭', '😡', '👏', '🤑', '🙈', '💀', '🤡', '🥶', '🫡', '😱', '🙏', '🍀', '👀']);
+
 export function initSocket(httpServer) {
   const io = new Server(httpServer, { path: '/socket.io', cors: { origin: false } });
   setIO(io);
@@ -74,6 +77,18 @@ export function initSocket(httpServer) {
       ack({ ok: true });
       if (table.status !== 'closed') schedule(table);
       broadcast(table);
+    });
+
+    // Reacciones con emoji: no se guardan, solo se reenvían a la mesa (con límite anti-spam)
+    let lastReaction = 0;
+    socket.on('table:react', async ({ code, emoji } = {}) => {
+      if (!REACTIONS.has(emoji)) return;
+      const now = Date.now();
+      if (now - lastReaction < 1200) return;
+      lastReaction = now;
+      const t = await getTable(code);
+      if (!t || t.status === 'closed' || !t.seats.some((s) => s.userId === uid)) return;
+      io.to(roomOf(t.code)).emit('table:reaction', { code: t.code, userId: uid, emoji, id: `${uid}-${now}` });
     });
 
     socket.on('table:unsubscribe', async ({ code } = {}) => {

@@ -12,6 +12,7 @@ const props = defineProps({
   board: { type: Array, default: () => [] },
   final: Boolean, // mano resuelta y todas las cartas a la vista
   allIn: Boolean,
+  compact: Boolean, // versión pequeña para ir encima de la mesa
 });
 
 const pct = ref({});
@@ -53,24 +54,24 @@ const leader = computed(() => {
 </script>
 
 <template>
-  <div class="strip" :class="{ final }">
+  <div class="strip" :class="{ final, compact }">
     <div class="head">
       <span class="tag" :class="{ allin: allIn && !final }">
         <Icon :name="final ? 'trophy' : allIn ? 'zap' : 'eye'" :size="14" />
         {{ final ? 'Resultado' : allIn ? 'All-in' : 'Showdown' }}
       </span>
-      <span v-if="!final && board.length < 5" class="small faint">Probabilidad de ganar con las cartas que faltan</span>
+      <span v-if="!final && board.length < 5 && !compact" class="small faint">Probabilidad de ganar con las cartas que faltan</span>
     </div>
     <TransitionGroup name="list" tag="div" class="rows">
       <div v-for="r in rows" :key="r.userId" class="row-p" :class="{ me: r.isMe, win: final && r.winner, lose: final && !r.winner, lead: leader === r.userId }">
-        <Avatar :user="r.seat" :size="34" />
+        <Avatar :user="r.seat" :size="compact ? 26 : 34" />
         <div class="who">
           <b class="ellipsis">{{ r.isMe ? 'Tú' : r.seat.displayName }}</b>
           <span class="hand ellipsis">{{ r.hand }}</span>
         </div>
         <div class="cards">
-          <PlayingCard :card="r.cards[0]" size="sm" />
-          <PlayingCard :card="r.cards[1]" size="sm" :delay="0.15" />
+          <PlayingCard :card="r.cards[0]" :size="compact ? 'xs' : 'sm'" />
+          <PlayingCard :card="r.cards[1]" :size="compact ? 'xs' : 'sm'" :delay="0.15" />
         </div>
         <div class="res">
           <template v-if="final">
@@ -117,5 +118,16 @@ const leader = computed(() => {
 .res b { font-size: 16px; font-weight: 900; }
 .bar { width: 100%; height: 4px; border-radius: 9px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
 .bar div { height: 100%; background: linear-gradient(90deg, var(--violet), var(--gold)); transition: width 0.6s var(--ease); }
+/* encima de la mesa */
+.compact { padding: 8px; gap: 5px; border-radius: 16px; background: rgba(5, 9, 28, 0.78); backdrop-filter: blur(6px); box-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.8); }
+.compact.final { background: rgba(5, 30, 18, 0.8); }
+.compact .tag { font-size: 10.5px; padding: 2px 8px; }
+.compact .rows { gap: 4px; }
+.compact .row-p { grid-template-columns: auto 1fr auto 52px; gap: 7px; padding: 4px 6px; border-radius: 11px; }
+.compact .who b { font-size: 12.5px; }
+.compact .hand { font-size: 11px; }
+.compact .res b { font-size: 14px; }
+.compact .row-p.win { transform: none; }
+.compact :deep(.pcard.xs) { --w: 28px; }
 .won { display: inline-flex; align-items: center; gap: 4px; font-weight: 900; color: #86efac; font-size: 14px; }
 </style>

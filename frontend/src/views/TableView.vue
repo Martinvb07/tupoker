@@ -222,6 +222,26 @@ async function confirmRebuy() {
 }
 const nameOfSeat = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
 
+// ---------- reacciones con emoji ----------
+const EMOJIS = ['😂', '🔥', '😎', '😭', '😡', '👏', '🤑', '🙈', '💀', '🤡', '🥶', '🫡', '😱', '🙏', '🍀', '👀'];
+const reactions = ref({}); // userId -> { emoji, id }
+const showReactions = ref(false);
+const reactTimers = {};
+function onReaction(p) {
+  if (p.code !== code.value) return;
+  reactions.value = { ...reactions.value, [p.userId]: { emoji: p.emoji, id: p.id } };
+  clearTimeout(reactTimers[p.userId]);
+  reactTimers[p.userId] = setTimeout(() => {
+    const { [p.userId]: _, ...rest } = reactions.value;
+    reactions.value = rest;
+  }, 2600);
+}
+function react(emoji) {
+  getSocket().emit('table:react', { code: code.value, emoji });
+  showReactions.value = false;
+  navigator.vibrate?.(10);
+}
+
 // ---------- socket ----------
 let sock;
 async function subscribe() {
@@ -263,6 +283,7 @@ onMounted(() => {
   sock = getSocket();
   sock.on('table:state', onState);
   sock.on('table:kicked', onKicked);
+  sock.on('table:reaction', onReaction);
   sock.on('connect', subscribe);
   if (sock.connected) subscribe();
   tick = setInterval(() => (now.value = Date.now()), 250);
@@ -272,6 +293,7 @@ onMounted(() => {
 onUnmounted(() => {
   sock.off('table:state', onState);
   sock.off('table:kicked', onKicked);
+  sock.off('table:reaction', onReaction);
   sock.off('connect', subscribe);
   sock.emit('table:unsubscribe', { code: code.value });
   clearInterval(tick);
@@ -349,9 +371,9 @@ const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
 const statusLine = computed(() => {
   const h = view.value;
   if (!s.value) return '';
-  if (paused.value) return `En pausa · recompra de ${nameOf(paused.value.userId)}`;
+  if (paused.value) return paused.value.userId === s.value.me ? 'En pausa · tu recompra' : `En pausa · recompra de ${nameOf(paused.value.userId)}`;
   if (revealing.value) return 'Repartiendo cartas…';
-  if (gameOver.value) return champion.value ? `${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
+  if (gameOver.value) return !champion.value ? 'Partida terminada' : champion.value.userId === s.value.me ? '¡Ganaste la partida!' : `${nameOf(champion.value.userId)} ganó la partida`;
   if (!h || h.stage === 'done') {
     if (random.value) return nextHandIn.value ? `Siguiente mano en ${nextHandIn.value}s` : 'Esperando jugadores';
     return manager.value ? 'Listo para repartir' : 'Esperando al dealer';
@@ -411,6 +433,10 @@ const myBadge = computed(() => {
               {{ paused ? statusLine : winnerText || statusLine }}
             </div>
           </Transition>
+          <!-- all-in / showdown: las cartas de todos, encima de la mesa -->
+          <Transition name="pop">
+            <ShowdownStrip v-if="revealed.length" class="on-felt" compact :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
+          </Transition>
         </div>
 
         <div v-for="l in layout" :key="l.seat.userId" class="seat-pos" :style="{ left: l.x + '%', top: l.y + '%' }">
@@ -425,8 +451,21 @@ const myBadge = computed(() => {
             :bet-dir="l.dir"
             :seconds-left="random && hand?.toAct === l.seat.userId ? turnLeft : 0"
             :bet-reach="isMobile ? 0.68 : 1"
+            :reaction="reactions[l.seat.userId]"
           />
         </div>
+      </div>
+
+      <!-- reacciones -->
+      <div class="react-fab">
+        <Transition name="pop">
+          <div v-if="showReactions" class="react-pop">
+            <button v-for="e in EMOJIS" :key="e" class="react-opt" @click="react(e)">{{ e }}</button>
+          </div>
+        </Transition>
+        <button class="icon-btn react-btn" :class="{ on: showReactions }" aria-label="Enviar reacción" @click="showReactions = !showReactions">
+          <Icon :name="showReactions ? 'x' : 'smile'" :size="20" />
+        </button>
       </div>
     </section>
 
@@ -434,7 +473,10 @@ const myBadge = computed(() => {
     <section class="dock">
       <!-- en móvil, tu asiento vive aquí -->
       <div v-if="isMobile && mySeat" class="mebar">
-        <Avatar :user="mySeat" :size="28" />
+        <span class="mb-ava">
+          <Avatar :user="mySeat" :size="28" />
+          <Transition name="react"><span v-if="reactions[s.me]" :key="reactions[s.me].id" class="mb-react">{{ reactions[s.me].emoji }}</span></Transition>
+        </span>
         <b class="num">{{ offline ? 'Tú' : formatChips(myView ? myView.stack : mySeat.chips) }}</b>
         <span v-if="myBadge" class="mb-badge">{{ myBadge }}</span>
         <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
@@ -443,11 +485,6 @@ const myBadge = computed(() => {
         <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
       </div>
 
-      <!-- cartas de todos a la vista (all-in / showdown) -->
-      <Transition name="slide">
-        <ShowdownStrip v-if="revealed.length" :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
-      </Transition>
-
       <!-- partida terminada -->
       <Transition name="slide">
         <div v-if="gameOver" class="gameover">
@@ -455,7 +492,7 @@ const myBadge = computed(() => {
             <Avatar v-if="champion" :user="champion" :size="48" ring />
             <div class="grow">
               <div class="eyebrow">Partida terminada</div>
-              <b class="go-name">{{ champion ? `${nameOf(champion.userId)} se queda con todo` : 'Nadie más tiene fichas' }}</b>
+              <b class="go-name">{{ !champion ? 'Nadie más tiene fichas' : champion.userId === s.me ? 'Te quedas con todo' : `${nameOf(champion.userId)} se queda con todo` }}</b>
             </div>
           </div>
           <div class="row go-actions">
@@ -671,6 +708,7 @@ const myBadge = computed(() => {
 }
 .rail { position: absolute; inset: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.08); pointer-events: none; }
 .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 0 12%; pointer-events: none; }
+.on-felt { position: relative; width: 100%; max-width: 400px; z-index: 6; text-align: left; }
 .pot {
   display: flex; align-items: center; gap: 8px; padding: 5px 14px 5px 6px; border-radius: 99px;
   background: rgba(0, 0, 0, 0.45); font-weight: 800; font-size: 15px; color: #fff;
@@ -731,6 +769,29 @@ const myBadge = computed(() => {
 .assign .input { width: 110px; height: 38px; padding: 0 10px; }
 .scanbox { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .physical { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: 14px; color: var(--text-2); font-weight: 600; font-size: 14px; background: rgba(5, 9, 28, 0.4); border: 1px solid var(--line); }
+.felt-zone { position: relative; }
+.react-fab { position: absolute; right: 12px; bottom: 10px; z-index: 30; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.react-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(22, 31, 69, 0.9); border-color: var(--line-2); box-shadow: var(--shadow); }
+.react-btn.on { background: var(--surface-3); }
+.react-pop {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px; border-radius: 18px;
+  background: rgba(22, 31, 69, 0.96); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px);
+  transform-origin: bottom right;
+}
+.react-opt { width: 46px; height: 46px; border-radius: 12px; font-size: 26px; display: grid; place-items: center; transition: transform 0.2s var(--spring), background 0.2s; }
+.react-opt:hover { background: rgba(255, 255, 255, 0.08); }
+.react-opt:active { transform: scale(0.85); }
+.mb-ava { position: relative; display: inline-flex; }
+.mb-react {
+  position: absolute; left: 50%; top: -8px; font-size: 30px; line-height: 1; pointer-events: none; z-index: 40;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6)); animation: mb-float 2.6s var(--ease) forwards;
+}
+@keyframes mb-float {
+  0% { transform: translate(-50%, 10px) scale(0.3); opacity: 0; }
+  15% { transform: translate(-50%, -18px) scale(1.25); opacity: 1; }
+  80% { transform: translate(-50%, -36px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -54px); opacity: 0; }
+}
 .paused-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px; font-weight: 700; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px dashed rgba(245, 181, 68, 0.4); }
 .req.vote { background: rgba(245, 181, 68, 0.08); border-color: rgba(245, 181, 68, 0.35); }
 .votes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }

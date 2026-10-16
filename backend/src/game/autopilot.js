@@ -7,7 +7,9 @@ import { save, isOnline } from './manager.js';
 import { broadcast } from '../hub.js';
 
 export const TURN_MS = Number(process.env.TURN_MS) || 40_000;
-export const NEXT_HAND_MS = Number(process.env.NEXT_HAND_MS) || 7_000;
+export const NEXT_HAND_MS = Number(process.env.NEXT_HAND_MS) || 10_000;
+// tras un all-in el móvil destapa el board calle a calle (~6 s): se suma para que dé tiempo a verlo
+const RUNOUT_EXTRA_MS = 6_000;
 const MAX_TIMEOUTS = 2; // turnos agotados seguidos antes de sentarle fuera
 
 const timers = new Map(); // code -> { turnKey, turn, next }
@@ -57,7 +59,10 @@ export function schedule(table) {
   } else if (engine.modeOf(table) === 'random' && table.hand && !t.next) {
     const ready = engine.eligibleSeats(table).filter((s) => isOnline(table.code, s.userId));
     if (ready.length >= 2) {
-      table.nextHandAt = Date.now() + NEXT_HAND_MS;
+      // si la mano acabó en all-in, se suma el tiempo que tarda en destaparse el board
+      const runout = table.hand.result?.how === 'showdown' && table.hand.players.some((p) => p.allIn);
+      const delay = NEXT_HAND_MS + (runout ? RUNOUT_EXTRA_MS : 0);
+      table.nextHandAt = Date.now() + delay;
       t.next = setTimeout(() => {
         t.next = null;
         table.nextHandAt = null;
@@ -67,7 +72,7 @@ export function schedule(table) {
           /* no hay jugadores suficientes: se queda esperando */
         }
         commit(table);
-      }, NEXT_HAND_MS);
+      }, delay);
     } else table.nextHandAt = null;
   }
 }
