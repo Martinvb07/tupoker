@@ -14,6 +14,7 @@ const props = defineProps({
   initial: { type: Array, default: () => [] },
   confirmLabel: { type: String, default: 'Confirmar' },
   loading: Boolean,
+  scan: Boolean, // la mesa tiene activado el escaneo con cámara
 });
 const emit = defineEmits(['confirm', 'close']);
 
@@ -55,7 +56,7 @@ const full = computed(() => picked.value.length === props.count);
       </button>
     </div>
 
-    <div class="scan"><ScanButton :expected="count" :exclude="disabled" @cards="(c) => (picked = c.filter((x) => !blocked.has(x)))" /></div>
+    <div v-if="scan" class="scan"><ScanButton :expected="count" :exclude="disabled" @cards="(c) => (picked = c.filter((x) => !blocked.has(x)))" /></div>
 
     <div class="suits">
       <button

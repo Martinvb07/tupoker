@@ -5,7 +5,7 @@ Web para gestionar partidas de póker Texas Hold'em con amigos usando **cartas f
 ## Funcionalidades
 
 - **3 modos de juego**:
-  - 🃏 **En vivo**: cartas físicas y fichas. Quien crea la mesa es el dealer: fija mínima, máxima y fichas, reparte y pone el flop/turn/river (a mano o **escaneándolos con la cámara**). Cada jugador escanea sus 2 cartas una vez para ver sus probabilidades. En el showdown elige el dealer. Una recompra **pausa la partida** hasta que todos aceptan y el dealer asigna las fichas.
+  - 🃏 **En vivo**: cartas físicas y fichas. Quien crea la mesa es el dealer: fija mínima, máxima y fichas, reparte, pone el flop/turn/river y dice quién gana. Los jugadores solo apuestan desde el móvil. Opcional (interruptor en los ajustes): **escanear cartas con la cámara** para que cada jugador vea sus probabilidades. Una recompra **pausa la partida** hasta que todos aceptan y el dealer asigna las fichas.
   - 🎲 **Aleatorio**: con fichas. La app baraja y reparte las cartas y el board, y el showdown se resuelve solo.
   - ☕ **Sin dinero**: cartas físicas sin apuestas. Solo board, jugadas, probabilidades y ganador; no cuenta para los rankings.
 - **Partida terminada**: cuando un jugador se queda con todas las fichas, el dealer puede empezar una **nueva partida** (todos vuelven a las fichas iniciales) o hacer recompras.
@@ -65,7 +65,7 @@ cd /var/www/tupoker
 # 3. Variables de entorno
 cp backend/.env.example backend/.env
 nano backend/.env    # JWT_SECRET largo y aleatorio, NODE_ENV=production, PUBLIC_URL=https://tu-dominio
-                     # ANTHROPIC_API_KEY=... (opcional) activa el escaneo de cartas con la cámara
+                     # ANTHROPIC_API_KEY=... (opcional) solo si quieres el escaneo de cartas con la cámara
 
 # 4. Build y arranque
 (cd backend && npm ci --omit=dev)

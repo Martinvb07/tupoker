@@ -37,6 +37,7 @@ const settingsSchema = {
   startingChips: { type: Number, default: 10000 },
   mode: { type: String, enum: ['live', 'random', 'offline'], default: 'live' },
   chips: { type: [Number], default: [] }, // denominaciones elegidas por el dealer (vacío = automáticas)
+  scan: { type: Boolean, default: false }, // escanear cartas con la cámara (opcional, necesita ANTHROPIC_API_KEY)
 };
 
 const groupSchema = new Schema(

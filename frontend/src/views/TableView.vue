@@ -192,6 +192,10 @@ async function assignRebuy(r) {
   const amount = assignAmount.value[r.userId] || r.rebuyRequest.amount;
   if (await run('dealer:rebuy', { userId: r.userId, approve: true, amount })) toast.success(`Fichas asignadas a ${r.displayName}`);
 }
+// escaneo con cámara: opcional por mesa (y solo si el servidor tiene la clave)
+const scanOn = computed(() => !!s.value?.settings.scan && scanEnabled.value);
+// en vivo sin escaneo los jugadores no ponen cartas: solo apuestan y el dealer dice quién gana
+const showMyCards = computed(() => mode.value !== 'live' || scanOn.value);
 // escaneo de tus cartas (una vez por mano)
 async function saveMyCards(cards) {
   if (cards.length === 2) {
@@ -332,8 +336,8 @@ watch(
   (st) => {
     if (st === 'showdown' && manager.value && !random.value) showShowdown.value = true;
     if (st !== 'showdown') showShowdown.value = false;
-    if (st === 'preflop' && me.value && !myCards.value.length && !random.value) {
-      toast(scanEnabled.value ? 'Nueva mano: escanea tus cartas para ver tu probabilidad' : 'Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
+    if (st === 'preflop' && me.value && !myCards.value.length && !random.value && showMyCards.value) {
+      toast(scanOn.value ? 'Nueva mano: escanea tus cartas para ver tu probabilidad' : 'Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
     }
   },
 );
@@ -554,13 +558,17 @@ const myBadge = computed(() => {
 
       <!-- jugador -->
       <div v-if="me && live && !revealed.length" class="player">
-        <div class="mine">
+        <div v-if="!showMyCards" class="physical">
+          <template v-if="me.folded">Te has retirado de esta mano</template>
+          <template v-else><Icon name="hand" :size="16" />Juega con tus cartas físicas · aquí solo apuestas</template>
+        </div>
+        <div v-else class="mine">
           <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
             <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded">?</PlayingCard>
             <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded" :delay="0.28">?</PlayingCard>
             <span v-if="!random" class="edit"><Icon name="edit" :size="13" /></span>
           </button>
-          <div v-if="!random && !me.folded && myCards.length < 2 && scanEnabled" class="grow scanbox">
+          <div v-if="!random && !me.folded && myCards.length < 2 && scanOn" class="grow scanbox">
             <ScanButton big :expected="2" :exclude="hand.board" label="Escanear mis cartas" @cards="saveMyCards" />
             <button class="linkbtn small" @click="openPicker('hole')">o elegirlas a mano</button>
           </div>
@@ -599,6 +607,7 @@ const myBadge = computed(() => {
       :disabled="pickerConfig.disabled"
       :confirm-label="pickerConfig.label"
       :loading="busy"
+      :scan="scanOn"
       @confirm="onPicked"
       @close="picker.open = false"
     />
@@ -721,6 +730,7 @@ const myBadge = computed(() => {
 .assign { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 100%; }
 .assign .input { width: 110px; height: 38px; padding: 0 10px; }
 .scanbox { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.physical { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: 14px; color: var(--text-2); font-weight: 600; font-size: 14px; background: rgba(5, 9, 28, 0.4); border: 1px solid var(--line); }
 .paused-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px; font-weight: 700; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px dashed rgba(245, 181, 68, 0.4); }
 .req.vote { background: rgba(245, 181, 68, 0.08); border-color: rgba(245, 181, 68, 0.35); }
 .votes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }

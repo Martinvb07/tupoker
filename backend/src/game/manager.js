@@ -35,6 +35,7 @@ function normalize(doc) {
       startingChips: t.settings.startingChips,
       mode: t.settings.mode || 'live',
       chips: [...(t.settings.chips || [])],
+      scan: !!t.settings.scan,
     },
   };
 }

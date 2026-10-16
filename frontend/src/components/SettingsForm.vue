@@ -5,6 +5,9 @@ import { chipDenominations } from '@shared/poker.js';
 import { formatChips, MODES } from '@/lib/format.js';
 import Chip from './Chip.vue';
 import Icon from './Icon.vue';
+import { onMounted } from 'vue';
+import { scanEnabled, checkScan } from '@/lib/vision.js';
+onMounted(checkScan);
 
 const model = defineModel({ type: Object, required: true });
 defineProps({ hideStarting: Boolean, hideMode: Boolean });
@@ -109,7 +112,22 @@ function removeChip(v) {
           </p>
         </div>
       </div>
-      <p v-else class="hint offline-note">En este modo no hay fichas ni apuestas: el dealer pone las cartas comunes y la app dice qué lleva cada uno y quién gana.</p>
+    </Transition>
+
+    <label v-if="mode !== 'random'" class="toggle">
+      <div>
+        <b class="row" style="gap: 6px"><Icon name="camera" :size="16" />Escanear cartas con la cámara</b>
+        <div class="small muted">
+          {{ mode === 'live' ? 'Opcional. Si lo activas, el dealer puede escanear el board y cada jugador sus cartas para ver probabilidades. Si no, los jugadores solo apuestan y el dealer dice quién gana.' : 'Opcional. Escanear en vez de elegir las cartas a mano.' }}
+        </div>
+        <div v-if="!scanEnabled" class="small warn">El servidor aún no tiene la clave de Claude: el botón no aparecerá hasta configurarla.</div>
+      </div>
+      <input type="checkbox" :checked="!!model.scan" @change="set('scan', $event.target.checked)" />
+      <span class="knob"></span>
+    </label>
+
+    <Transition name="fade">
+      <p v-if="mode === 'offline'" class="hint offline-note">En este modo no hay fichas ni apuestas: el dealer pone las cartas comunes y la app dice qué lleva cada uno y quién gana.</p>
     </Transition>
   </div>
 </template>
@@ -155,5 +173,6 @@ function removeChip(v) {
 .rm:hover { transform: scale(1.15); }
 .add .input { height: 44px; }
 .add .btn { height: 44px; }
+.warn { color: var(--gold-2); margin-top: 4px; }
 .offline-note { padding: 12px 14px; border-radius: 14px; background: rgba(5, 9, 28, 0.4); border: 1px solid var(--line); color: var(--text-2); }
 </style>
