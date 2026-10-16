@@ -519,7 +519,8 @@ export function settleRebuyVotes(table) {
     if (!req?.needed) continue;
     req.needed = req.needed.filter((id) => present.has(id));
     req.approvals = (req.approvals || []).filter((id) => req.needed.includes(id));
-    if (req.approvals.length < req.needed.length) continue;
+    // en vivo, tras los votos las fichas las asigna el dealer a mano
+    if (req.dealerAssign || req.approvals.length < req.needed.length) continue;
     try {
       applyRebuy(table, seat.userId, req.amount);
       applied.push(seat.userId);
@@ -528,6 +529,12 @@ export function settleRebuyVotes(table) {
     }
   }
   return applied;
+}
+
+/** En vivo, una recompra pendiente pausa la partida hasta que se resuelve. */
+export function pausedBy(table) {
+  if (modeOf(table) !== 'live') return null;
+  return table.seats.find((s) => s.rebuyRequest) || null;
 }
 
 /** Nueva partida: todos vuelven a las fichas iniciales. */

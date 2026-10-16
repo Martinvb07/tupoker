@@ -178,3 +178,15 @@ test('recompra votada: se aplica solo cuando aceptan todos los demás', () => {
   assert.deepEqual(e.settleRebuyVotes(t), ['p1']);
   assert.equal(t.seats[1].chips, 1500);
 });
+
+test('en vivo: la recompra pausa la partida y no se aplica sola aunque voten todos', () => {
+  const t = mesa(3, [0, 1000, 1000]);
+  t.settings.mode = 'live';
+  t.seats[0].rebuyRequest = { amount: 1000, needed: ['p1'], approvals: ['p1'], dealerAssign: true };
+  assert.equal(e.pausedBy(t).userId, 'p0');
+  assert.deepEqual(e.settleRebuyVotes(t), []);
+  assert.equal(t.seats[0].chips, 0);
+  e.applyRebuy(t, 'p0', 1500); // lo hace el dealer
+  assert.equal(t.seats[0].chips, 1500);
+  assert.equal(e.pausedBy(t), null);
+});

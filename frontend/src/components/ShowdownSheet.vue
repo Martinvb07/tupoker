@@ -14,10 +14,12 @@ const sel = ref([]);
 // siempre montado (el padre solo cambia `open`): así nunca queda una capa huérfana bloqueando la página
 const hand = computed(() => props.state?.hand || { board: [], pots: [], players: [], handNames: {} });
 const offline = computed(() => hand.value.mode === 'offline');
+const live = computed(() => (hand.value.mode || 'live') === 'live');
 watch(
   () => [props.open, hand.value?.pots],
   () => {
-    if (props.open && hand.value?.pots) sel.value = hand.value.pots.map((p) => [...p.suggested]);
+    // en vivo elige siempre el dealer: solo se marca de antemano el bote que tiene un único aspirante
+    if (props.open && hand.value?.pots) sel.value = hand.value.pots.map((p) => (live.value && p.eligible.length > 1 ? [] : [...p.suggested]));
   },
   { immediate: true },
 );
@@ -44,7 +46,8 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
         <b v-else>{{ hand.pots.length > 1 ? (i === 0 ? 'Bote principal' : `Bote lateral ${i}`) : 'Bote' }}</b>
         <span v-if="!offline" class="amt num">{{ formatChips(pot.amount) }}</span>
       </div>
-      <p v-if="!pot.complete && pot.eligible.length > 1" class="hint">Algunos jugadores no registraron sus cartas: elige el ganador viendo la mesa.</p>
+      <p v-if="live && pot.eligible.length > 1" class="hint">Mira las cartas en la mesa y toca a quién gana. Si hay empate, marca a varios.</p>
+      <p v-else-if="!pot.complete && pot.eligible.length > 1" class="hint">Algunos jugadores no registraron sus cartas: elige el ganador viendo la mesa.</p>
       <button
         v-for="id in pot.eligible"
         :key="id"
@@ -55,7 +58,10 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
         <Avatar :user="seat(id)" :size="38" />
         <div class="grow info">
           <div class="nm ellipsis">{{ seat(id).displayName }}</div>
-          <div class="hn small">{{ hand.handNames[id] || 'Cartas no registradas' }}</div>
+          <div class="hn small">
+            {{ hand.handNames[id] || 'Cartas no registradas' }}
+            <span v-if="live && pot.suggested.includes(id) && pot.eligible.length > 1" class="sug">· sugerido por la app</span>
+          </div>
         </div>
         <div class="cards">
           <PlayingCard v-for="(c, k) in player(id)?.cards?.length ? player(id).cards : ['', '']" :key="k" :card="c" size="xs" />
@@ -87,6 +93,7 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
 .hn { color: var(--text-2); }
 .cand.on .hn { color: #bbf7d0; }
 .cards { display: flex; gap: 2px; }
+.sug { color: var(--gold-2); font-weight: 700; }
 .tick { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line-2); color: transparent; transition: all 0.25s var(--spring); }
 .cand.on .tick { background: var(--green); border-color: var(--green); color: #052e16; transform: scale(1.1); }
 </style>

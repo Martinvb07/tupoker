@@ -29,12 +29,16 @@ export function initSocket(httpServer) {
 
     // Ejecuta una operación sobre la mesa, guarda y emite el nuevo estado.
     // manage: solo quien gestiona la mesa (dealer; en modo aleatorio, el anfitrión).
+    // acciones de juego bloqueadas mientras una recompra en vivo tiene la partida en pausa
+    const PAUSABLE = new Set(['table:action', 'dealer:start', 'dealer:board', 'dealer:resolve', 'dealer:forceFold']);
     const handle = (event, fn, { manage = false } = {}) => {
       socket.on(event, async (payload = {}, ack = () => {}) => {
         try {
           const table = await getTable(payload.code);
           if (!table) throw new GameError('Mesa no encontrada');
           if (table.status === 'closed') throw new GameError('La mesa está cerrada');
+          const paused = PAUSABLE.has(event) && engine.pausedBy(table);
+          if (paused) throw new GameError(`Partida en pausa: recompra de ${paused.displayName} pendiente`);
           if (manage && !canManage(table, uid)) {
             throw new GameError(engine.modeOf(table) === 'random' ? 'Solo el anfitrión puede hacer esto' : 'Solo el dealer puede hacer esto');
           }
@@ -141,8 +145,18 @@ export function initSocket(httpServer) {
       if (engine.modeOf(t) === 'random') {
         seat.rebuyRequest = { amount: amt, at: Date.now(), needed: others, approvals: [] };
         for (const id of others) notifyUser(id, 'table:notice', { message: `${seat.displayName} pide recomprar ${amt}. Acepta o rechaza en la mesa.` });
-      } else if (canManage(t, uid) || !others.length) engine.applyRebuy(t, uid, amt);
-      else seat.rebuyRequest = { amount: amt, at: Date.now() };
+      } else if (!others.length) engine.applyRebuy(t, uid, amt);
+      else {
+        // en vivo: se pausa la partida, votan todos los demás jugadores (menos el dealer)
+        // y al final el dealer asigna las fichas
+        const voters = others.filter((id) => id !== t.dealerId);
+        seat.rebuyRequest = { amount: amt, at: Date.now(), needed: voters, approvals: [], dealerAssign: true };
+        for (const id of others) {
+          notifyUser(id, 'table:notice', {
+            message: id === t.dealerId ? `${seat.displayName} pide recomprar ${amt}: la partida queda en pausa` : `${seat.displayName} pide recomprar ${amt}. Acepta o rechaza en la mesa.`,
+          });
+        }
+      }
     });
     handle('table:cancelRebuy', (t) => {
       const seat = mySeat(t);
@@ -176,12 +190,22 @@ export function initSocket(httpServer) {
     handle('dealer:cancelHand', (t) => engine.cancelHand(t), { manage: true });
     handle('dealer:resetChips', (t) => engine.resetChips(t), { manage: true });
 
-    handle('dealer:rebuy', (t, { userId, approve }) => {
+    // El dealer asigna (o rechaza) la recompra. En vivo, solo cuando todos han aceptado.
+    handle('dealer:rebuy', (t, { userId, approve, amount }) => {
       const seat = t.seats.find((s) => s.userId === userId);
-      if (!seat?.rebuyRequest) throw new GameError('No hay recompra pendiente');
-      if (seat.rebuyRequest.needed) throw new GameError('Esta recompra la votan todos los jugadores');
-      if (approve) engine.applyRebuy(t, userId, seat.rebuyRequest.amount);
-      else delete seat.rebuyRequest;
+      const req = seat?.rebuyRequest;
+      if (!req) throw new GameError('No hay recompra pendiente');
+      if (req.needed && !req.dealerAssign) throw new GameError('Esta recompra la votan todos los jugadores');
+      if (!approve) {
+        delete seat.rebuyRequest;
+        notifyUser(userId, 'table:notice', { message: 'El dealer rechazó tu recompra', type: 'error' });
+        return;
+      }
+      if (req.needed && req.approvals.length < req.needed.length) throw new GameError('Aún faltan jugadores por aceptar');
+      const n = Math.floor(Number(amount) || req.amount);
+      if (!(n >= 1)) throw new GameError('Cantidad no válida');
+      engine.applyRebuy(t, userId, n);
+      notifyUser(userId, 'table:notice', { message: `El dealer te asignó ${n} fichas`, type: 'success' });
     }, { manage: true });
 
     handle('dealer:settings', (t, { settings, name }) => {

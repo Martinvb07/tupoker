@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue';
 import { RANKS, SUITS, SUIT_SYMBOL, SUIT_NAME } from '@shared/poker.js';
 import Sheet from './Sheet.vue';
 import PlayingCard from './PlayingCard.vue';
+import ScanButton from './ScanButton.vue';
 
 const props = defineProps({
   open: Boolean,
@@ -54,6 +55,8 @@ const full = computed(() => picked.value.length === props.count);
       </button>
     </div>
 
+    <div class="scan"><ScanButton :expected="count" :exclude="disabled" @cards="(c) => (picked = c.filter((x) => !blocked.has(x)))" /></div>
+
     <div class="suits">
       <button
         v-for="s in SUITS"
@@ -94,6 +97,8 @@ const full = computed(() => picked.value.length === props.count);
 </template>
 
 <style scoped>
+.scan { margin-bottom: 14px; }
+.scan:empty { display: none; }
 .slots { display: flex; justify-content: center; gap: 10px; margin-bottom: 18px; min-height: 104px; }
 .slot { padding: 0; }
 .suits { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }

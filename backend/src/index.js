@@ -6,12 +6,13 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { config } from './config.js';
-import { ah, requireAuth } from './auth.js';
+import { ah, requireAuth, HttpError } from './auth.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import groupRoutes from './routes/groups.js';
 import tableRoutes from './routes/tables.js';
 import friendRoutes from './routes/friends.js';
+import visionRoutes from './routes/vision.js';
 import { userRanking, groupRanking, userStats } from './stats.js';
 import { initSocket } from './socket.js';
 
@@ -28,6 +29,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/friends', friendRoutes);
+app.use('/api/vision', visionRoutes);
 
 app.get('/api/rankings/users', requireAuth, ah(async (req, res) => {
   res.json({ ranking: await userRanking({ sort: req.query.sort }) });
@@ -51,8 +53,10 @@ if (fs.existsSync(config.clientDist)) {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   const status = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 400 : 500);
-  if (status >= 500) console.error(err);
-  const msg = err.code === 'LIMIT_FILE_SIZE' ? 'La imagen es demasiado grande (máx. 3 MB)' : status >= 500 ? 'Error del servidor' : err.message;
+  // los HttpError llevan un mensaje pensado para el usuario; el resto de errores 5xx se ocultan
+  const ours = err instanceof HttpError;
+  if (status >= 500 && !ours) console.error(err);
+  const msg = err.code === 'LIMIT_FILE_SIZE' ? 'La imagen es demasiado grande' : ours || status < 500 ? err.message : 'Error del servidor';
   res.status(status).json({ error: msg });
 });
 

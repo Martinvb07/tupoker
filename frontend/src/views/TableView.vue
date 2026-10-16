@@ -17,6 +17,8 @@ import ShowdownSheet from '@/components/ShowdownSheet.vue';
 import TableMenu from '@/components/TableMenu.vue';
 import Sheet from '@/components/Sheet.vue';
 import ShowdownStrip from '@/components/ShowdownStrip.vue';
+import ScanButton from '@/components/ScanButton.vue';
+import { scanEnabled, checkScan } from '@/lib/vision.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -182,8 +184,22 @@ const rebuyRequests = computed(() =>
 );
 // aleatorio: recompras que votan todos los demás jugadores (se juega con dinero real)
 const voteRequests = computed(() => (s.value?.seats || []).filter((x) => x.rebuyRequest?.needed));
+// en vivo, una recompra pendiente pausa la partida hasta que el dealer asigna las fichas
+const paused = computed(() => (s.value?.settings.mode || 'live') === 'live' && (s.value?.seats || []).find((x) => x.rebuyRequest));
+const allVoted = (r) => r.rebuyRequest.approvals.length >= r.rebuyRequest.needed.length;
+const assignAmount = ref({});
+async function assignRebuy(r) {
+  const amount = assignAmount.value[r.userId] || r.rebuyRequest.amount;
+  if (await run('dealer:rebuy', { userId: r.userId, approve: true, amount })) toast.success(`Fichas asignadas a ${r.displayName}`);
+}
+// escaneo de tus cartas (una vez por mano)
+async function saveMyCards(cards) {
+  if (cards.length === 2) {
+    if (await run('table:cards', { cards })) toast.success('Cartas guardadas');
+  } else picker.value = { open: true, mode: 'hole', initial: cards };
+}
 const canRebuy = computed(() => !!mySeat.value && !offline.value && (!me.value || me.value.folded || !live.value));
-const rebuyLabel = computed(() => (random.value ? 'Pedir recompra' : manager.value ? 'Recomprar' : 'Pedir recompra al dealer'));
+const rebuyLabel = computed(() => 'Pedir recompra');
 const rebuyOpen = ref(false);
 const rebuyAmount = ref(0);
 const rebuyOptions = computed(() => {
@@ -198,7 +214,7 @@ async function confirmRebuy() {
   if (!(await run('table:rebuy', { amount: rebuyAmount.value }))) return;
   rebuyOpen.value = false;
   menu.value.open = false;
-  toast.success(random.value ? 'Petición enviada: todos tienen que aceptarla' : manager.value ? 'Fichas añadidas' : 'Recompra pedida al dealer');
+  toast.success(random.value ? 'Petición enviada: todos tienen que aceptarla' : 'Petición enviada: la partida queda en pausa');
 }
 const nameOfSeat = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
 
@@ -246,6 +262,7 @@ onMounted(() => {
   sock.on('connect', subscribe);
   if (sock.connected) subscribe();
   tick = setInterval(() => (now.value = Date.now()), 250);
+  checkScan();
   mq.addEventListener('change', onMq);
 });
 onUnmounted(() => {
@@ -286,7 +303,7 @@ async function resolve(winners) {
 const pickerConfig = computed(() => {
   const h = hand.value;
   if (picker.value.mode === 'hole') {
-    return { count: 2, title: 'Tus cartas', initial: myCards.value, disabled: h?.board || [], label: 'Guardar mis cartas' };
+    return { count: 2, title: 'Tus cartas', initial: picker.value.initial || myCards.value, disabled: h?.board || [], label: 'Guardar mis cartas' };
   }
   if (picker.value.mode === 'board' && h?.awaiting) {
     const need = { flop: 3, turn: 1, river: 1 }[h.awaiting];
@@ -316,7 +333,7 @@ watch(
     if (st === 'showdown' && manager.value && !random.value) showShowdown.value = true;
     if (st !== 'showdown') showShowdown.value = false;
     if (st === 'preflop' && me.value && !myCards.value.length && !random.value) {
-      toast('Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
+      toast(scanEnabled.value ? 'Nueva mano: escanea tus cartas para ver tu probabilidad' : 'Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
     }
   },
 );
@@ -328,6 +345,7 @@ const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
 const statusLine = computed(() => {
   const h = view.value;
   if (!s.value) return '';
+  if (paused.value) return `En pausa · recompra de ${nameOf(paused.value.userId)}`;
   if (revealing.value) return 'Repartiendo cartas…';
   if (gameOver.value) return champion.value ? `${nameOf(champion.value.userId)} ganó la partida` : 'Partida terminada';
   if (!h || h.stage === 'done') {
@@ -385,8 +403,8 @@ const myBadge = computed(() => {
             <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" :size="isMobile && myTurn ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
           </div>
           <Transition name="fade" mode="out-in">
-            <div :key="statusLine.replace(/\d+s$/, '') + winnerText" class="status" :class="{ mine: myTurn, win: winnerText || gameOver }">
-              {{ winnerText || statusLine }}
+            <div :key="statusLine.replace(/\d+s$/, '') + winnerText" class="status" :class="{ mine: myTurn && !paused, win: (winnerText || gameOver) && !paused, pause: paused }">
+              {{ paused ? statusLine : winnerText || statusLine }}
             </div>
           </Transition>
         </div>
@@ -457,7 +475,7 @@ const myBadge = computed(() => {
         </div>
       </TransitionGroup>
 
-      <!-- recompras votadas (aleatorio): todos tienen que aceptar -->
+      <!-- recompras votadas: en aleatorio se aplican al aceptar todos; en vivo la partida se pausa y el dealer asigna -->
       <TransitionGroup name="list" tag="div" class="requests" v-if="voteRequests.length">
         <div v-for="r in voteRequests" :key="r.userId" class="req vote">
           <Avatar :user="r" :size="30" />
@@ -466,6 +484,9 @@ const myBadge = computed(() => {
               <b>{{ r.userId === s.me ? 'Tu recompra' : r.displayName }}</b>
               {{ r.userId === s.me ? 'de' : 'quiere recomprar' }}
               <b class="num">{{ formatChips(r.rebuyRequest.amount) }}</b>
+            </div>
+            <div v-if="r.rebuyRequest.dealerAssign" class="small faint">
+              {{ allVoted(r) ? 'Todos aceptaron · el dealer asigna las fichas' : 'Partida en pausa hasta que todos acepten' }}
             </div>
             <div class="votes">
               <span v-for="id in r.rebuyRequest.needed" :key="id" class="vchip" :class="{ ok: r.rebuyRequest.approvals.includes(id) }">
@@ -477,6 +498,13 @@ const myBadge = computed(() => {
             <button class="icon-btn ok" :disabled="busy" aria-label="Aceptar" @click="run('table:rebuyVote', { userId: r.userId, approve: true })"><Icon name="check" :size="18" /></button>
             <button class="icon-btn" :disabled="busy" aria-label="Rechazar" @click="run('table:rebuyVote', { userId: r.userId, approve: false })"><Icon name="x" :size="18" /></button>
           </template>
+          <div v-else-if="r.rebuyRequest.dealerAssign && manager" class="assign">
+            <template v-if="allVoted(r)">
+              <input v-model.number="assignAmount[r.userId]" class="input num" type="number" min="1" :placeholder="String(r.rebuyRequest.amount)" />
+              <button class="btn btn-sm btn-primary" :disabled="busy" @click="assignRebuy(r)"><Icon name="coins" :size="15" />Asignar</button>
+            </template>
+            <button class="icon-btn" :disabled="busy" aria-label="Rechazar" @click="run('dealer:rebuy', { userId: r.userId, approve: false })"><Icon name="x" :size="18" /></button>
+          </div>
           <button v-else-if="r.userId === s.me" class="btn btn-sm btn-ghost" :disabled="busy" @click="run('table:cancelRebuy')">Cancelar</button>
         </div>
       </TransitionGroup>
@@ -485,7 +513,7 @@ const myBadge = computed(() => {
       <div v-if="showDealerBar && !gameOver && !myTurn" class="dealer">
         <div class="dl-tag"><Icon name="dealer" :size="15" />Dealer</div>
         <template v-if="!live">
-          <button class="btn btn-primary btn-lg grow" :disabled="!canStart || busy" @click="run('dealer:start')">
+          <button class="btn btn-primary btn-lg grow" :disabled="!canStart || busy || !!paused" @click="run('dealer:start')">
             <Icon name="play" :size="18" />Repartir mano {{ (s.handNo || 0) + 1 }}
           </button>
           <button class="icon-btn big" title="Ajustes de la mesa" @click="openMenu('settings')"><Icon name="settings" /></button>
@@ -532,12 +560,17 @@ const myBadge = computed(() => {
             <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded" :delay="0.28">?</PlayingCard>
             <span v-if="!random" class="edit"><Icon name="edit" :size="13" /></span>
           </button>
-          <EquityPanel v-if="!me.folded" class="grow" :hole="myCards" :board="view.board" :opponents="opponents" :compact="myTurn" :mini="myTurn && isMobile" />
+          <div v-if="!random && !me.folded && myCards.length < 2 && scanEnabled" class="grow scanbox">
+            <ScanButton big :expected="2" :exclude="hand.board" label="Escanear mis cartas" @cards="saveMyCards" />
+            <button class="linkbtn small" @click="openPicker('hole')">o elegirlas a mano</button>
+          </div>
+          <EquityPanel v-else-if="!me.folded" class="grow" :hole="myCards" :board="view.board" :opponents="opponents" :compact="myTurn" :mini="myTurn && isMobile" />
           <div v-else class="grow folded-msg">Te has retirado de esta mano</div>
         </div>
         <button v-if="offline && !me.folded && hand.stage !== 'showdown'" class="btn btn-danger btn-block" :disabled="busy" @click="run('table:fold')">Retirarme de esta mano</button>
         <Transition name="slide">
-          <div v-if="myTurn && !offline" class="padwrap">
+          <div v-if="myTurn && !offline && paused" class="paused-note"><Icon name="pause" :size="16" />Tu turno espera: la partida está en pausa por una recompra</div>
+          <div v-else-if="myTurn && !offline" class="padwrap">
             <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="isMobile" @action="doAction" />
           </div>
         </Transition>
@@ -572,7 +605,7 @@ const myBadge = computed(() => {
     <ShareSheet :open="showShare" :code="s.code" invite-friends @close="showShare = false" />
     <Sheet :open="rebuyOpen" title="Recompra" :width="420" @close="rebuyOpen = false">
       <p class="muted">
-        {{ random ? 'Como se juega con dinero real, todos los demás jugadores tienen que aceptarla.' : manager ? 'Te sumas las fichas al momento.' : 'El dealer tiene que aprobarla.' }}
+        {{ random ? 'Como se juega con dinero real, todos los demás jugadores tienen que aceptarla.' : 'La partida se pausa hasta que todos acepten y el dealer te asigne las fichas.' }}
       </p>
       <div class="rb-opts">
         <button v-for="v in rebuyOptions" :key="v" class="rb-opt" :class="{ on: rebuyAmount === v }" @click="rebuyAmount = v">
@@ -641,6 +674,7 @@ const myBadge = computed(() => {
   padding: 4px 12px; border-radius: 99px; background: rgba(0, 0, 0, 0.25);
 }
 .status.mine { color: #2a1700; background: var(--gold); animation: winpop 0.6s var(--spring); }
+.status.pause { color: #2a1700; background: linear-gradient(90deg, var(--gold-2), var(--gold)); }
 .status.win { color: #052e16; background: linear-gradient(90deg, #4ade80, #22c55e); }
 @keyframes winpop { 0% { transform: scale(0.85); } 100% { transform: scale(1); } }
 .seat-pos { position: absolute; transform: translate(-50%, -50%); z-index: 5; transition: left 0.6s var(--ease), top 0.6s var(--ease); }
@@ -682,6 +716,12 @@ const myBadge = computed(() => {
 }
 .requests { display: flex; flex-direction: column; gap: 6px; }
 .req { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 16px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); }
+.req { flex-wrap: wrap; }
+.req.vote > .grow { flex: 1 1 180px; }
+.assign { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 100%; }
+.assign .input { width: 110px; height: 38px; padding: 0 10px; }
+.scanbox { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.paused-note { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px; font-weight: 700; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px dashed rgba(245, 181, 68, 0.4); }
 .req.vote { background: rgba(245, 181, 68, 0.08); border-color: rgba(245, 181, 68, 0.35); }
 .votes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .vchip { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); color: var(--text-3); }
