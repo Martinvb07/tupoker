@@ -1,0 +1,14 @@
+# TuPoker — https://tupoker.online
+User-agent: *
+Allow: /
+# zonas privadas: solo tienen sentido con sesión iniciada
+Disallow: /api/
+Disallow: /mesa/
+Disallow: /unirse/
+Disallow: /grupos/
+Disallow: /perfil
+Disallow: /amigos
+Disallow: /nueva-mesa
+Disallow: /u/
+
+Sitemap: https://tupoker.online/sitemap.xml

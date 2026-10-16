@@ -3,10 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-    <title>TuPoker · Póker con tus amigos</title>
-    <meta name="description" content="TuPoker: lleva tus partidas de póker con amigos. Fichas, turnos, probabilidades en vivo, grupos y rankings. Con cartas físicas o repartidas por la app." />
+    <title>TuPoker · App para jugar póker con amigos: fichas, mesas y ranking</title>
+    <meta name="description" content="TuPoker es la app gratis para jugar póker con amigos: lleva las fichas, los turnos y los botes desde el móvil, calcula probabilidades y guarda el ranking de tu grupo." />
+    <link rel="canonical" href="https://tupoker.online/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0b1026" />
     <meta name="application-name" content="TuPoker" />
+    <meta name="author" content="TuPoker" />
 
     <!-- iconos -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -20,21 +23,103 @@
     <meta name="apple-mobile-web-app-title" content="TuPoker" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <!-- al compartir el enlace (WhatsApp, redes) -->
+    <!-- al compartir el enlace (WhatsApp, Facebook, X...). El servidor personaliza estas etiquetas en los enlaces de invitación -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="TuPoker" />
+    <meta property="og:locale" content="es_ES" />
     <meta property="og:title" content="TuPoker · Póker con tus amigos" />
-    <meta property="og:description" content="Fichas, turnos, probabilidades en vivo, grupos y rankings para tus partidas." />
+    <meta property="og:description" content="Fichas, turnos, probabilidades en vivo, grupos y rankings para tus partidas de póker. Gratis, desde el móvil." />
+    <meta property="og:url" content="https://tupoker.online/" />
     <meta property="og:image" content="https://tupoker.online/og-image.png" />
-    <meta property="og:url" content="https://tupoker.online" />
+    <meta property="og:image:secure_url" content="https://tupoker.online/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="TuPoker: el póker con tus amigos" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TuPoker · Póker con tus amigos" />
+    <meta name="twitter:description" content="Fichas, turnos, probabilidades en vivo, grupos y rankings para tus partidas de póker." />
+    <meta name="twitter:image" content="https://tupoker.online/og-image.png" />
+
+    <!-- datos estructurados para Google -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://tupoker.online/#website",
+            "name": "TuPoker",
+            "url": "https://tupoker.online/",
+            "inLanguage": "es"
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://tupoker.online/#organization",
+            "name": "TuPoker",
+            "url": "https://tupoker.online/",
+            "logo": "https://tupoker.online/icon-512.png"
+          },
+          {
+            "@type": "WebApplication",
+            "name": "TuPoker",
+            "url": "https://tupoker.online/",
+            "applicationCategory": "GameApplication",
+            "operatingSystem": "Web, Android, iOS",
+            "inLanguage": "es",
+            "description": "App web para llevar partidas de póker Texas Hold'em con amigos: fichas, turnos, botes, probabilidades en vivo, grupos y rankings.",
+            "image": "https://tupoker.online/og-image.png",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "publisher": { "@id": "https://tupoker.online/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "¿TuPoker es gratis?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Sí. Creas tu cuenta, montas la mesa y juegas con tus amigos sin pagar nada." }
+              },
+              {
+                "@type": "Question",
+                "name": "¿Necesito descargar una aplicación?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. TuPoker funciona en el navegador del móvil y del ordenador, y puedes añadirla a la pantalla de inicio como una app." }
+              },
+              {
+                "@type": "Question",
+                "name": "¿Puedo jugar con mi baraja de siempre?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Sí. En el modo en vivo usáis cartas físicas y la app lleva las fichas, los turnos y los botes. También hay un modo en el que la app reparte las cartas." }
+              },
+              {
+                "@type": "Question",
+                "name": "¿Cuántos jugadores caben en una mesa?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Hasta 10 jugadores por mesa. Tus amigos entran escaneando un código QR o escribiendo un código de 6 letras." }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <!-- contenido inicial (lo ven buscadores y vistas previas antes de que cargue la app; Vue lo sustituye) -->
+      <main style="max-width: 720px; margin: 0 auto; padding: 48px 20px; font-family: Outfit, system-ui, sans-serif; color: #eef1ff; background: #0b1026">
+        <h1>TuPoker: la app para jugar póker con amigos</h1>
+        <p>Lleva las fichas, los turnos y los botes de tus partidas de póker Texas Hold'em desde el móvil. Calcula probabilidades en vivo, crea grupos con tus amigos y compite en el ranking.</p>
+        <h2>Tres formas de jugar</h2>
+        <ul>
+          <li><strong>En vivo:</strong> cartas físicas y fichas en la app; el dealer pone el board y dice quién gana.</li>
+          <li><strong>Aleatorio:</strong> la app baraja y reparte las cartas.</li>
+          <li><strong>Sin dinero:</strong> solo jugadas, probabilidades y ganador.</li>
+        </ul>
+        <p><a href="/registro" style="color: #f5b544">Crear cuenta gratis</a> · <a href="/entrar" style="color: #f5b544">Entrar</a></p>
+      </main>
+    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

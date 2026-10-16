@@ -13,6 +13,7 @@ import groupRoutes from './routes/groups.js';
 import tableRoutes from './routes/tables.js';
 import friendRoutes from './routes/friends.js';
 import visionRoutes from './routes/vision.js';
+import shareRoutes from './routes/share.js';
 import { userRanking, groupRanking, userStats } from './stats.js';
 import { initSocket } from './socket.js';
 
@@ -43,6 +44,9 @@ app.get('/api/stats/me', requireAuth, ah(async (req, res) => {
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+
+// enlaces de invitación con vista previa personalizada (nginx los manda aquí)
+app.use(shareRoutes);
 
 // En producción nginx sirve el frontend; esto es un respaldo por si se accede directo al puerto.
 if (fs.existsSync(config.clientDist)) {

@@ -18,6 +18,7 @@ import TableMenu from '@/components/TableMenu.vue';
 import Sheet from '@/components/Sheet.vue';
 import ShowdownStrip from '@/components/ShowdownStrip.vue';
 import ScanButton from '@/components/ScanButton.vue';
+import ChatPanel from '@/components/ChatPanel.vue';
 import { scanEnabled, checkScan } from '@/lib/vision.js';
 
 const route = useRoute();
@@ -40,6 +41,9 @@ const secondsTo = (ts) => (ts ? Math.max(0, Math.ceil((ts - serverNow.value) / 1
 
 // ---------- móvil ----------
 const mq = window.matchMedia('(max-width: 700px)');
+const mqWide = window.matchMedia('(min-width: 1100px)');
+const isWide = ref(mqWide.matches);
+const onWide = (e) => (isWide.value = e.matches);
 const isMobile = ref(mq.matches);
 const onMq = (e) => (isMobile.value = e.matches);
 
@@ -132,7 +136,7 @@ const layout = computed(() => {
     return others.map((seat, i) => pos(seat, Math.PI + ((i + 1) * Math.PI) / (n + 1), 44, 50));
   }
   const n = ordered.length;
-  return ordered.map((seat, i) => pos(seat, Math.PI / 2 + (i * 2 * Math.PI) / n));
+  return ordered.map((seat, i) => pos(seat, Math.PI / 2 + (i * 2 * Math.PI) / n, 47, 40));
 });
 
 const handNames = computed(() => view.value?.handNames || {});
@@ -242,11 +246,50 @@ function react(emoji) {
   navigator.vibrate?.(10);
 }
 
+// ---------- chat ----------
+const chat = ref({ messages: [], reactions: undefined, cooldownUntil: 0, open: false, unread: 0, busy: false });
+const chatVisible = computed(() => isWide.value || chat.value.open);
+async function loadChat() {
+  try {
+    const r = await emit('chat:history', { code: code.value });
+    chat.value.messages = r.messages;
+    chat.value.reactions = r.reactions;
+  } catch { /* sin chat */ }
+}
+function onChatMessage(p) {
+  if (p.code !== code.value) return;
+  chat.value.messages = [...chat.value.messages, p.message].slice(-150);
+  if (!chatVisible.value && p.message.userId !== s.value?.me) chat.value.unread++;
+}
+function onChatUpdate(p) {
+  if (p.code !== code.value) return;
+  chat.value.messages = chat.value.messages.map((m) => (m.id === p.id ? { ...m, reactions: p.reactions } : m));
+}
+function sendChat({ text, replyTo }) {
+  chat.value.busy = true;
+  getSocket().timeout(8000).emit('chat:send', { code: code.value, text, replyTo }, (err, r) => {
+    chat.value.busy = false;
+    if (err) return toast.error('No se pudo enviar el mensaje');
+    if (r?.ok) chat.value.cooldownUntil = Date.now() + 5000;
+    else {
+      if (r?.wait) chat.value.cooldownUntil = Date.now() + r.wait;
+      toast.error(r?.error || 'No se pudo enviar');
+    }
+  });
+}
+const reactChat = ({ id, emoji }) => getSocket().emit('chat:react', { code: code.value, id, emoji });
+function openChat() {
+  chat.value.open = true;
+  chat.value.unread = 0;
+}
+watch(isWide, (w) => w && (chat.value.unread = 0));
+
 // ---------- socket ----------
 let sock;
 async function subscribe() {
   try {
     await emit('table:subscribe', { code: code.value });
+    loadChat();
   } catch (e) {
     if (e.message === 'not-seated') router.replace(`/unirse/${code.value}`);
     else {
@@ -284,21 +327,27 @@ onMounted(() => {
   sock.on('table:state', onState);
   sock.on('table:kicked', onKicked);
   sock.on('table:reaction', onReaction);
+  sock.on('chat:message', onChatMessage);
+  sock.on('chat:update', onChatUpdate);
   sock.on('connect', subscribe);
   if (sock.connected) subscribe();
   tick = setInterval(() => (now.value = Date.now()), 250);
   checkScan();
   mq.addEventListener('change', onMq);
+  mqWide.addEventListener('change', onWide);
 });
 onUnmounted(() => {
   sock.off('table:state', onState);
   sock.off('table:kicked', onKicked);
   sock.off('table:reaction', onReaction);
+  sock.off('chat:message', onChatMessage);
+  sock.off('chat:update', onChatUpdate);
   sock.off('connect', subscribe);
   sock.emit('table:unsubscribe', { code: code.value });
   clearInterval(tick);
   clearTimeout(revealTimer);
   mq.removeEventListener('change', onMq);
+  mqWide.removeEventListener('change', onWide);
   document.body.style.overflow = '';
 });
 
@@ -456,8 +505,12 @@ const myBadge = computed(() => {
         </div>
       </div>
 
-      <!-- reacciones -->
+      <!-- reacciones y chat -->
       <div class="react-fab">
+        <button v-if="!isWide" class="icon-btn react-btn chat-btn" aria-label="Abrir chat" @click="openChat">
+          <Icon name="mail" :size="20" />
+          <Transition name="pop"><i v-if="chat.unread" class="chat-badge">{{ chat.unread > 9 ? '9+' : chat.unread }}</i></Transition>
+        </button>
         <Transition name="pop">
           <div v-if="showReactions" class="react-pop">
             <button v-for="e in EMOJIS" :key="e" class="react-opt" @click="react(e)">{{ e }}</button>
@@ -634,7 +687,19 @@ const myBadge = computed(() => {
         <template v-else-if="live">Entrarás en la siguiente mano</template>
         <template v-else-if="!random">Esperando a que el dealer reparta…</template>
       </div>
+      <!-- chat fijo en la columna derecha (PC) -->
+      <div v-if="isWide" class="chat-box">
+        <div class="chat-head"><Icon name="mail" :size="16" />Chat de la mesa</div>
+        <ChatPanel :messages="chat.messages" :me="s.me" :reactions="chat.reactions" :cooldown-until="chat.cooldownUntil" :now="now" :busy="chat.busy" @send="sendChat" @react="reactChat" />
+      </div>
     </section>
+
+    <!-- chat en móvil / tableta -->
+    <Sheet :open="chat.open && !isWide" title="Chat de la mesa" :width="520" @close="chat.open = false">
+      <div class="chat-sheet">
+        <ChatPanel :messages="chat.messages" :me="s.me" :reactions="chat.reactions" :cooldown-until="chat.cooldownUntil" :now="now" :busy="chat.busy" @send="sendChat" @react="reactChat" />
+      </div>
+    </Sheet>
 
     <CardPicker
       :open="picker.open"
@@ -698,7 +763,7 @@ const myBadge = computed(() => {
   font-weight: 900; letter-spacing: 0.12em; color: var(--gold-2); background: rgba(245, 181, 68, 0.1); border: 1px solid rgba(245, 181, 68, 0.35);
 }
 
-.felt-zone { flex: 1; min-height: 0; display: grid; place-items: center; padding: 34px 40px 40px; transition: padding 0.4s var(--ease); }
+.felt-zone { flex: 1; min-height: 0; display: grid; place-items: center; padding: 40px 40px 84px; transition: padding 0.4s var(--ease); }
 .felt {
   position: relative; width: 100%; height: 100%; max-width: 1000px; max-height: 560px;
   border-radius: 50%;
@@ -770,6 +835,15 @@ const myBadge = computed(() => {
 .scanbox { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .physical { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: 14px; color: var(--text-2); font-weight: 600; font-size: 14px; background: rgba(5, 9, 28, 0.4); border: 1px solid var(--line); }
 .felt-zone { position: relative; }
+.chat-btn { position: relative; }
+.chat-badge {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; font-style: normal;
+  background: var(--red); color: #fff; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg);
+}
+.chat-sheet { height: min(68dvh, 600px); display: flex; flex-direction: column; }
+.chat-box { flex: 1 1 260px; min-height: 260px; display: flex; flex-direction: column; padding: 12px; border-radius: 20px; background: rgba(22, 31, 69, 0.7); border: 1px solid var(--line); }
+.chat-head { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; color: var(--text-2); padding-bottom: 6px; }
+.chat-box :deep(.chat) { flex: 1; min-height: 0; }
 .react-fab { position: absolute; right: 12px; bottom: 10px; z-index: 30; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .react-btn { width: 44px; height: 44px; border-radius: 50%; background: rgba(22, 31, 69, 0.9); border-color: var(--line-2); box-shadow: var(--shadow); }
 .react-btn.on { background: var(--surface-3); }
@@ -857,6 +931,8 @@ const myBadge = computed(() => {
 @media (min-width: 1100px) {
   .tp { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }
   .bar { grid-column: 1 / -1; }
-  .dock { max-height: none; background: rgba(11, 16, 38, 0.6); border-left: 1px solid var(--line); justify-content: center; }
+  .dock { max-height: none; min-height: 0; overflow-y: auto; background: rgba(11, 16, 38, 0.6); border-left: 1px solid var(--line); justify-content: flex-start; padding-top: 14px; }
+  .dock > * { flex-shrink: 0; }
+  .dock > .chat-box { flex: 1 1 260px; }
 }
 </style>

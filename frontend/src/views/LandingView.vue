@@ -27,6 +27,12 @@ const FEATURES = [
   { icon: 'qr', title: 'Entrar con QR', text: 'Comparte el código o el QR y cada uno entra desde su móvil en segundos.' },
   { icon: 'handshake', title: 'Amigos', text: 'Mira quién está conectado o jugando, invítalos a tu mesa y únete a la suya.' },
 ];
+const FAQ = [
+  { q: '¿TuPoker es gratis?', a: 'Sí. Creas tu cuenta, montas la mesa y juegas con tus amigos sin pagar nada.' },
+  { q: '¿Necesito descargar una aplicación?', a: 'No. TuPoker funciona en el navegador del móvil y del ordenador, y puedes añadirla a la pantalla de inicio como una app.' },
+  { q: '¿Puedo jugar con mi baraja de siempre?', a: 'Sí. En el modo en vivo usáis cartas físicas y la app lleva las fichas, los turnos y los botes. También hay un modo en el que la app reparte las cartas.' },
+  { q: '¿Cuántos jugadores caben en una mesa?', a: 'Hasta 10 jugadores por mesa. Tus amigos entran escaneando un código QR o escribiendo un código de 6 letras.' },
+];
 const STEPS = [
   { icon: 'plus', title: 'Crea la mesa', text: 'Elige el modo, las ciegas y las fichas iniciales.' },
   { icon: 'qr', title: 'Tus amigos entran', text: 'Escanean el QR o escriben el código de 6 letras.' },
@@ -129,6 +135,20 @@ const STEPS = [
       </div>
     </section>
 
+    <!-- preguntas frecuentes (las mismas que los datos estructurados de index.html) -->
+    <section class="sec" aria-labelledby="faq-title">
+      <div class="sec-head">
+        <div class="eyebrow">Dudas</div>
+        <h2 id="faq-title">Preguntas frecuentes</h2>
+      </div>
+      <div class="faq">
+        <details v-for="q in FAQ" :key="q.q" class="qa">
+          <summary>{{ q.q }}<Icon name="plus" :size="18" class="qi" /></summary>
+          <p class="muted">{{ q.a }}</p>
+        </details>
+      </div>
+    </section>
+
     <section class="final card">
       <h2>¿Montamos la mesa?</h2>
       <p class="muted">Crea tu cuenta en 10 segundos y comparte el QR con tus amigos.</p>
@@ -206,6 +226,14 @@ const STEPS = [
 .snum { position: absolute; right: 18px; top: 10px; font-size: 54px; font-weight: 900; color: rgba(255, 255, 255, 0.06); line-height: 1; }
 .sicon { color: var(--gold-2); }
 .step h3 { font-size: 17px; font-weight: 800; margin: 12px 0 4px; }
+.faq { display: flex; flex-direction: column; gap: 10px; max-width: 760px; margin: 0 auto; }
+.qa { border-radius: 16px; background: rgba(22, 31, 69, 0.55); border: 1px solid var(--line); transition: border-color 0.25s; }
+.qa[open] { border-color: rgba(245, 181, 68, 0.35); }
+.qa summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; font-weight: 700; font-size: 16px; }
+.qa summary::-webkit-details-marker { display: none; }
+.qa .qi { color: var(--gold-2); transition: transform 0.3s var(--spring); flex: none; }
+.qa[open] .qi { transform: rotate(45deg); }
+.qa p { padding: 0 18px 16px; animation: rise 0.35s var(--ease); }
 .final {
   margin-top: 50px; text-align: center; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 12px;
   background: radial-gradient(ellipse at 50% 0%, rgba(245, 181, 68, 0.2), transparent 65%), var(--surface);

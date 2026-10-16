@@ -4,12 +4,14 @@ import { ah, HttpError, requireAuth } from '../auth.js';
 import { cacheTable, getTable, uniqueTableCode } from '../game/manager.js';
 import { isHandLive, cancelHand } from '../game/engine.js';
 import { commit } from '../game/autopilot.js';
+import { dropChat } from '../game/chat.js';
 
 /** Cierra una mesa (devuelve las fichas de la mano en curso) y libera la mesa del grupo. */
 export async function closeTableNow(t) {
   if (isHandLive(t)) cancelHand(t);
   t.status = 'closed';
   t.closedAt = new Date();
+  dropChat(t.code);
   if (t.groupId) await Group.updateOne({ _id: t.groupId, activeTableCode: t.code }, { $set: { activeTableCode: null } });
 }
 

@@ -42,7 +42,7 @@ async function submit() {
         <div class="ch ch2"><Chip :value="25000" :index="1" :size="56" /></div>
         <div class="ch ch3"><Chip :value="1000000" :index="5" :size="48" /></div>
       </div>
-      <RouterLink to="/bienvenido" class="hero-brand"><Brand :size="64" /></RouterLink>
+      <RouterLink to="/" class="hero-brand"><Brand :size="64" /></RouterLink>
       <p>Lleva las partidas con tus amigos al siguiente nivel: fichas, turnos, probabilidades y rankings en tiempo real.</p>
     </div>
 

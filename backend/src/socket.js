@@ -5,6 +5,7 @@ import { User } from './models.js';
 import { getTable, markOnline, viewFor, canManage, GameError } from './game/manager.js';
 import * as engine from './game/engine.js';
 import { commit, schedule } from './game/autopilot.js';
+import * as chat from './game/chat.js';
 import { setIO, broadcast, roomOf, notifyUser, markUserOnline } from './hub.js';
 import { cleanSettings, seatFor, closeTableNow } from './routes/tables.js';
 
@@ -89,6 +90,37 @@ export function initSocket(httpServer) {
       const t = await getTable(code);
       if (!t || t.status === 'closed' || !t.seats.some((s) => s.userId === uid)) return;
       io.to(roomOf(t.code)).emit('table:reaction', { code: t.code, userId: uid, emoji, id: `${uid}-${now}` });
+    });
+
+    // ---------- chat de la mesa ----------
+    const seatIn = async (code) => {
+      const t = await getTable(code);
+      if (!t || t.status === 'closed') return null;
+      const seat = t.seats.find((s) => s.userId === uid);
+      return seat ? { t, seat } : null;
+    };
+    socket.on('chat:history', async ({ code } = {}, ack = () => {}) => {
+      const ctx = await seatIn(code);
+      if (!ctx) return ack({ ok: false, error: 'No estás en esta mesa' });
+      ack({ ok: true, messages: chat.history(ctx.t.code), cooldown: chat.CHAT_COOLDOWN_MS, reactions: chat.CHAT_REACTIONS });
+    });
+    socket.on('chat:send', async ({ code, text, replyTo } = {}, ack = () => {}) => {
+      const ctx = await seatIn(code);
+      if (!ctx) return ack({ ok: false, error: 'No estás en esta mesa' });
+      try {
+        const message = chat.addMessage(ctx.t.code, ctx.seat, text, replyTo);
+        io.to(roomOf(ctx.t.code)).emit('chat:message', { code: ctx.t.code, message });
+        ack({ ok: true });
+      } catch (e) {
+        ack({ ok: false, error: e.message, wait: e.wait || 0 });
+      }
+    });
+    socket.on('chat:react', async ({ code, id, emoji } = {}, ack = () => {}) => {
+      const ctx = await seatIn(code);
+      if (!ctx) return ack({ ok: false });
+      const msg = chat.toggleReaction(ctx.t.code, id, emoji, uid);
+      if (msg) io.to(roomOf(ctx.t.code)).emit('chat:update', { code: ctx.t.code, id: msg.id, reactions: msg.reactions });
+      ack({ ok: !!msg });
     });
 
     socket.on('table:unsubscribe', async ({ code } = {}) => {
