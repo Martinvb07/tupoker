@@ -66,7 +66,7 @@ const lastLabel = computed(() => {
 
 <template>
   <div class="seat" :class="{ turn, folded: player?.folded, out: !player && hand && hand.stage !== 'done', me: isMe, won, sitout: seat.status === 'sitout' }">
-    <div class="cards" :class="{ shown: revealedMine || (!isMe && player?.cards?.length === 2) }" v-if="showCards && (!isMe || revealedMine)">
+    <div class="cards" :class="{ shown: revealedMine || (!isMe && player?.cards?.length === 2) }" v-if="showCards && (!isMe || revealedMine) && !(quiet && player?.cards?.length === 2)">
       <PlayingCard :card="player.cards?.[0] || ''" size="xs" />
       <PlayingCard :card="player.cards?.[1] || ''" size="xs" />
     </div>

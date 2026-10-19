@@ -141,6 +141,11 @@ const layout = computed(() => {
     // en móvil tu info (o la del dealer) va en el panel de abajo: los jugadores se reparten por arriba
     const others = myIdx >= 0 ? ordered.slice(1) : ordered;
     const n = others.length;
+    // con muchos jugadores el arco baja por los lados para que no se monten unos sobre otros
+    if (n >= 4) {
+      const from = Math.PI * 0.78, to = Math.PI * 2.22;
+      return others.map((seat, i) => pos(seat, from + (i * (to - from)) / (n - 1), 42, 46));
+    }
     return others.map((seat, i) => pos(seat, Math.PI + ((i + 1) * Math.PI) / (n + 1), 44, 50));
   }
   const n = ordered.length;
@@ -466,6 +471,10 @@ watch(
 const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => view.value?.board[i] || ''));
 const toActName = computed(() => (hand.value?.toAct ? nameOf(hand.value.toAct) : ''));
 const turnLeft = computed(() => secondsTo(hand.value?.turnDeadline));
+// duración del turno: lo que quedaba al empezar (para la barra que se vacía)
+const turnTotal = ref(0);
+watch(() => hand.value?.turnDeadline, (d) => (turnTotal.value = d ? Math.max(1, secondsTo(d)) : 0));
+const turnPct = computed(() => (turnTotal.value ? Math.min(100, (turnLeft.value / turnTotal.value) * 100) : 0));
 const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
 const statusLine = computed(() => {
   const h = view.value;
@@ -494,6 +503,8 @@ const payouts = computed(() => {
     .filter(([, v]) => v > 0)
     .map(([id, v]) => ({ id, amount: v, seat: seatsById.value[id] || { displayName: '—' } }));
 });
+// cada vez que cambia lo que toca hacer, la barra del dealer entra de nuevo con animación
+const dealerKey = computed(() => (live.value ? `${hand.value.no}-${hand.value.awaiting || hand.value.stage}` : `idle-${!!nextHandIn.value}`));
 const showResult = computed(() => playerOnly.value && payouts.value.length > 0 && !live.value && !revealing.value);
 const myWon = computed(() => payouts.value.find((w) => w.id === s.value?.me)?.amount || 0);
 function startNext() {
@@ -531,7 +542,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: myTurn && !offline, mobile: isMobile, solo: playerOnly }" v-if="s">
+  <div class="tp" :class="{ turn: myTurn && !offline, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -540,7 +551,7 @@ watch(
         <div class="sub small">
           <span class="dotc" :class="{ on: connected }"></span>
           <span class="mbadge"><Icon :name="info.icon" :size="13" />{{ info.short }}</span>
-          <template v-if="hand">· #{{ hand.no }}</template>
+          <span v-if="hand" class="hno">· #{{ hand.no }}</span>
           <template v-if="!offline">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
@@ -616,18 +627,15 @@ watch(
             </div>
           </Transition>
           <div class="board">
-            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" :size="isMobile && (myTurn || revealed.length) ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
+            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" :size="isMobile && (myTurn || layout.length >= 5) ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
           </div>
           <!-- en móvil, con el resultado encima de la mesa, no se repite quién gana -->
           <Transition name="fade" mode="out-in">
-            <div v-if="!(isMobile && revealed.length && winnerText && !paused)" :key="statusLine.replace(/\d+s$/, '') + winnerText" class="status" :class="{ mine: myTurn && !paused, win: (winnerText || gameOver) && !paused, pause: paused }">
+            <div v-if="!(revealed.length && winnerText && !paused)" :key="statusLine.replace(/\d+s$/, '') + winnerText" class="status" :class="{ mine: myTurn && !paused, win: (winnerText || gameOver) && !paused, pause: paused }">
               {{ paused ? statusLine : winnerText || statusLine }}
             </div>
           </Transition>
           <!-- all-in / showdown: las cartas de todos, encima de la mesa -->
-          <Transition name="pop">
-            <ShowdownStrip v-if="revealed.length" class="on-felt" compact :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
-          </Transition>
         </div>
 
         <div v-for="l in layout" :key="l.seat.userId" class="seat-pos" :style="{ left: l.x + '%', top: l.y + '%' }">
@@ -638,11 +646,11 @@ watch(
             :mode="mode"
             :is-me="l.seat.userId === s.me"
             :is-dealer="!random && l.seat.userId === s.dealerId"
-            :hand-name="isMobile && revealed.length ? '' : handNames[l.seat.userId]"
-            :quiet="isMobile && revealed.length > 0"
+            :hand-name="revealed.length ? '' : handNames[l.seat.userId]"
+            :quiet="revealed.length > 0"
             :bet-dir="l.dir"
             :seconds-left="random && hand?.toAct === l.seat.userId ? turnLeft : 0"
-            :bet-reach="isMobile ? 0.68 : 1"
+            :bet-reach="isMobile ? 0.68 : layout.length >= 5 ? 0.58 : 1"
             :reaction="reactions[l.seat.userId]"
           />
         </div>
@@ -667,6 +675,10 @@ watch(
 
     <!-- dock inferior -->
     <section class="dock">
+      <!-- las cartas de todos (all-in / showdown) van aquí y no tapan la mesa ni los asientos -->
+      <Transition name="slide">
+        <ShowdownStrip v-if="revealed.length" compact :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
+      </Transition>
       <!-- en móvil, tu asiento vive aquí -->
       <div v-if="isMobile && mySeat && !playerOnly" class="mebar">
         <span class="mb-ava">
@@ -678,7 +690,7 @@ watch(
         <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
         <span v-if="!random && s.dealerId === s.me" class="mb-dealer"><Icon name="dealer" :size="13" />Dealer</span>
         <span class="grow"></span>
-        <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }">{{ turnLeft }}s</span>
+        <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }"><Icon name="timer" :size="15" />{{ turnLeft }}s</span>
         <ReactButtons :emojis="EMOJIS" :unread="chat.unread" up @chat="openChat" @react="react" />
       </div>
 
@@ -776,7 +788,7 @@ watch(
       </div>
 
       <!-- controles del dealer (en vivo / sin dinero) -->
-      <div v-if="showDealerBar && !gameOver && !myTurn" class="dealer">
+      <div v-if="showDealerBar && !gameOver && !myTurn" :key="dealerKey" class="dealer rise">
         <div class="dl-tag"><Icon name="dealer" :size="15" />Dealer</div>
         <template v-if="!live && nextHandIn">
           <div class="countdown num">{{ nextHandIn }}</div>
@@ -837,21 +849,42 @@ watch(
             <template v-else><Icon name="hand" :size="16" />Juega con tus cartas físicas · aquí solo apuestas</template>
           </div>
         </template>
-        <div v-else-if="!playerOnly" class="mine">
-          <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
-            <PlayingCard :card="myCards[0] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded">?</PlayingCard>
-            <PlayingCard :card="myCards[1] || ''" placeholder :size="myTurn ? (isMobile ? 'sm' : 'md') : 'lg'" :dim="me.folded" :delay="0.28">?</PlayingCard>
-            <span v-if="!random" class="edit"><Icon name="edit" :size="13" /></span>
+        <!-- tu turno: fila compacta para dejar sitio al panel de apuesta -->
+        <div v-else-if="!playerOnly && myTurn" class="mine rise">
+          <button class="hole" :class="{ locked: random }" :aria-label="random ? 'Tus cartas' : 'Elegir mis cartas'" @click="random ? (cardsCovered = !cardsCovered) : openPicker('hole')">
+            <PlayingCard :card="cardsCovered ? '' : myCards[0] || ''" :placeholder="!myCards[0]" :size="isMobile ? 'sm' : 'md'" :dim="me.folded">?</PlayingCard>
+            <PlayingCard :card="cardsCovered ? '' : myCards[1] || ''" :placeholder="!myCards[1]" :size="isMobile ? 'sm' : 'md'" :dim="me.folded" :delay="0.12">?</PlayingCard>
           </button>
-          <div v-if="!random && !me.folded && myCards.length < 2 && scanOn" class="grow scanbox">
+          <EquityPanel v-if="!me.folded && !cardsCovered" class="grow" :hole="myCards" :board="view.board" :opponents="opponents" compact :mini="isMobile" />
+          <div v-else-if="cardsCovered" class="grow covered-msg">Cartas tapadas</div>
+        </div>
+        <!-- esperando: cartas arriba, probabilidad debajo y botones al final -->
+        <div v-else-if="!playerOnly" class="solo-box with-table rise">
+          <button class="sb-cards" :aria-label="random ? 'Tapar o destapar mis cartas' : 'Elegir mis cartas'" @click="random || myCards.length === 2 ? (cardsCovered = !cardsCovered) : openPicker('hole')">
+            <PlayingCard :card="cardsCovered ? '' : myCards[0] || ''" :placeholder="!myCards[0]" :size="isMobile ? 'md' : 'lg'" :dim="me.folded">?</PlayingCard>
+            <PlayingCard :card="cardsCovered ? '' : myCards[1] || ''" :placeholder="!myCards[1]" :size="isMobile ? 'md' : 'lg'" :dim="me.folded" :delay="0.28">?</PlayingCard>
+          </button>
+          <div v-if="me.folded" class="folded-msg sb-center">Te has retirado de esta mano</div>
+          <div v-else-if="!random && myCards.length < 2 && scanOn" class="scanbox">
             <ScanButton big :expected="2" :exclude="hand.board" label="Escanear mis cartas" @cards="saveMyCards" />
             <button class="linkbtn small" @click="openPicker('hole')">o elegirlas a mano</button>
           </div>
-          <EquityPanel v-else-if="!me.folded" class="grow" :hole="myCards" :board="view.board" :opponents="opponents" :compact="myTurn" :mini="myTurn && isMobile" />
-          <div v-else class="grow folded-msg">Te has retirado de esta mano</div>
+          <div v-else-if="cardsCovered" class="covered-msg sb-covered"><Icon name="eyeOff" :size="16" />Cartas tapadas · nadie las ve en tu pantalla</div>
+          <EquityPanel v-else-if="myCards.length === 2" class="sb-eq" :hole="myCards" :board="view.board" :opponents="opponents" :compact="isMobile" />
+          <!-- tapar y cambiar, en las esquinas para no robarle sitio a la mesa -->
+          <button v-if="!me.folded && myCards.length === 2" class="icon-btn sb-corner r" :aria-label="cardsCovered ? 'Destapar' : 'Tapar'" @click="cardsCovered = !cardsCovered">
+            <Icon :name="cardsCovered ? 'eye' : 'eyeOff'" :size="18" />
+          </button>
+          <button v-if="!me.folded && !random" class="icon-btn sb-corner l" :aria-label="myCards.length === 2 ? 'Cambiar cartas' : 'Elegir mis cartas'" @click="openPicker('hole')">
+            <Icon name="edit" :size="18" />
+          </button>
         </div>
         <button v-if="offline && !me.folded && hand.stage !== 'showdown'" class="btn btn-danger btn-block" :disabled="busy" @click="run('table:fold')">Retirarme de esta mano</button>
-        <Transition name="slide">
+        <div v-if="myTurn && random && turnLeft" class="tbar rise" :class="{ low: turnLeft <= 10 }">
+          <i :style="{ width: turnPct + '%' }"></i>
+          <span><Icon name="timer" :size="15" />Tu turno · {{ turnLeft }}s</span>
+        </div>
+        <Transition name="betpad">
           <div v-if="myTurn && !offline && paused" class="paused-note"><Icon name="pause" :size="16" />Tu turno espera: la partida está en pausa por una recompra</div>
           <div v-else-if="myTurn && !offline" class="padwrap">
             <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="isMobile && !playerOnly" :large="playerOnly" @action="doAction" />
@@ -972,7 +1005,9 @@ watch(
 }
 .bar { display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 8px; }
 .tname { font-weight: 800; font-size: 17px; }
-.sub { display: flex; align-items: center; gap: 6px; color: var(--text-2); flex-wrap: wrap; }
+.title { min-width: 0; }
+@media (max-width: 380px) { .hno { display: none; } }
+.sub { display: flex; align-items: center; gap: 5px; color: var(--text-2); flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
 .mbadge { font-weight: 700; color: var(--text); display: inline-flex; align-items: center; gap: 4px; }
 .mbadge svg { color: var(--gold-2); }
 .dotc { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
@@ -1024,7 +1059,7 @@ watch(
 .mb-badge { min-width: 24px; height: 22px; padding: 0 6px; border-radius: 99px; background: #fff; color: #111; font-size: 11px; font-weight: 900; display: grid; place-items: center; }
 .mb-bet { display: flex; align-items: center; gap: 4px; font-weight: 800; font-size: 13px; padding: 2px 8px 2px 2px; border-radius: 99px; background: rgba(0, 0, 0, 0.4); }
 .mb-dealer { font-size: 12px; font-weight: 700; color: var(--gold-2); display: inline-flex; align-items: center; gap: 4px; }
-.mb-timer { font-weight: 900; padding: 2px 10px; border-radius: 99px; background: rgba(245, 181, 68, 0.18); color: var(--gold-2); }
+.mb-timer { display: inline-flex; align-items: center; gap: 4px; font-weight: 900; font-size: 15px; padding: 3px 10px; border-radius: 99px; background: rgba(245, 181, 68, 0.18); color: var(--gold-2); }
 .mb-timer.low { background: rgba(244, 63, 94, 0.25); color: #fecdd3; animation: winpop 0.5s infinite alternate; }
 .dealer {
   display: flex; align-items: center; gap: 10px; padding: 8px; padding-left: 12px; border-radius: 18px;
@@ -1074,7 +1109,7 @@ watch(
   background: rgba(22, 31, 69, 0.96); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); backdrop-filter: blur(10px);
   transform-origin: bottom right;
 }
-.react-opt { width: 46px; height: 46px; border-radius: 12px; font-size: 26px; display: grid; place-items: center; transition: transform 0.2s var(--spring), background 0.2s; }
+.react-opt { width: 46px; height: 46px; border-radius: 12px; font-size: 26px; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0; transition: transform 0.2s var(--spring), background 0.2s; }
 .react-opt:hover { background: rgba(255, 255, 255, 0.08); }
 .react-opt:active { transform: scale(0.85); }
 .mb-ava { position: relative; display: inline-flex; }
@@ -1157,6 +1192,17 @@ watch(
 .solo .player { flex: 1; justify-content: flex-start; }
 .solo-cards { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 18px; background: rgba(5, 9, 28, 0.45); border: 1px solid var(--line); }
 .solo-cards .hole { gap: 5px; }
+.sb-center { text-align: center; }
+.solo-box.with-table { position: relative; gap: 10px; padding: 12px; }
+.sb-corner { position: absolute; top: 10px; width: 38px; height: 38px; border-radius: 12px; }
+.sb-corner.r { right: 10px; }
+.sb-corner.l { left: 10px; }
+.tbar { position: relative; height: 34px; border-radius: 12px; overflow: hidden; background: rgba(245, 181, 68, 0.12); border: 1px solid rgba(245, 181, 68, 0.4); }
+.tbar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, rgba(245, 181, 68, 0.55), rgba(245, 181, 68, 0.3)); transition: width 0.3s linear; }
+.tbar span { position: relative; height: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 800; font-size: 14px; color: var(--gold-2); }
+.tbar.low { background: rgba(244, 63, 94, 0.14); border-color: rgba(244, 63, 94, 0.55); animation: winpop 0.5s infinite alternate; }
+.tbar.low i { background: linear-gradient(90deg, rgba(244, 63, 94, 0.6), rgba(244, 63, 94, 0.3)); }
+.tbar.low span { color: #fecdd3; }
 .solo-box { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 20px; background: rgba(5, 9, 28, 0.45); border: 1px solid var(--line); }
 .sb-cards { display: flex; justify-content: center; gap: 10px; padding: 0; }
 .sb-cards :deep(.pcard.lg) { --w: 64px; }
@@ -1175,6 +1221,23 @@ watch(
 }
 
 .slide-enter-active { transition: transform 0.5s var(--ease), opacity 0.35s; }
+
+/* panel de apuesta: sube con rebote y sus partes entran una tras otra; al irse baja y se desvanece */
+.betpad-enter-active { animation: betpad-in 0.6s var(--spring) both; }
+.betpad-leave-active { animation: betpad-out 0.3s ease-in both; }
+.betpad-enter-active :deep(.pad > *) { animation: betpad-item 0.55s var(--spring) both; }
+.betpad-enter-active :deep(.pad > *:nth-child(1)) { animation-delay: 0.06s; }
+.betpad-enter-active :deep(.pad > *:nth-child(2)) { animation-delay: 0.12s; }
+.betpad-enter-active :deep(.pad > *:nth-child(3)) { animation-delay: 0.18s; }
+.betpad-enter-active :deep(.pad > *:nth-child(4)) { animation-delay: 0.24s; }
+.betpad-enter-active :deep(.pad > *:nth-child(5)) { animation-delay: 0.3s; }
+@keyframes betpad-in {
+  from { opacity: 0; transform: translateY(70px) scale(0.94); filter: blur(6px); }
+  60% { filter: blur(0); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes betpad-out { to { opacity: 0; transform: translateY(50px) scale(0.96); filter: blur(4px); } }
+@keyframes betpad-item { from { opacity: 0; transform: translateY(26px) scale(0.92); } to { opacity: 1; transform: none; } }
 .slide-leave-active { transition: transform 0.25s ease, opacity 0.2s; }
 .slide-enter-from, .slide-leave-to { transform: translateY(40px); opacity: 0; }
 
@@ -1187,13 +1250,18 @@ watch(
   .bar .icon-btn { width: 38px; height: 38px; }
   .tname { font-size: 16px; }
   .codebtn { padding: 0 9px; letter-spacing: 0.06em; height: 36px; }
-  .felt-zone { padding: 78px 22px 14px; min-height: 240px; }
+  .felt-zone { padding: 78px 22px 14px; min-height: 300px; }
+  .crowd .felt-zone { min-height: 380px; padding-top: 70px; }
+  /* mesa llena: asientos más pequeños para que nada se monte */
+  .crowd .seat-pos { transform: translate(-50%, -50%) scale(0.8); }
+  .crowd .center { padding-top: 0; }
   .felt { border-radius: 50% / 46%; max-height: none; }
   .center { padding: 18% 6% 0; gap: 7px; }
   .board { gap: 4px; }
   .board :deep(.pcard.md) { --w: 44px; }
   .dock { padding: 6px 12px calc(8px + var(--safe-b)); gap: 8px; max-height: none; overflow: visible; }
   .turn .felt-zone { padding-top: 72px; min-height: 200px; }
+  .crowd.turn .felt-zone { min-height: 340px; }
   .turn .center { padding-top: 22%; }
   .turn .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
   .turn .status { font-size: 12px; padding: 3px 10px; }
@@ -1202,9 +1270,11 @@ watch(
 /* mesa grande: el aviso va encima del bote, lejos de tu asiento */
 @media (min-width: 701px) {
   .status { order: -1; }
+  .crowd .status { order: 0; }
 }
 @media (min-width: 701px) and (max-width: 1099px) {
   .felt-zone { min-height: 420px; }
+  .crowd .felt-zone { min-height: 500px; }
 }
 @media (min-width: 1100px) {
   .tp { display: grid; grid-template-columns: 1fr 440px; grid-template-rows: auto 1fr; }

@@ -207,7 +207,7 @@ function jumpTo(id) {
 @media (hover: hover) {
   .msg:hover .tools { opacity: 1; max-height: 50px; pointer-events: auto; }
 }
-.tool { width: 30px; height: 30px; border-radius: 50%; font-size: 17px; display: grid; place-items: center; transition: transform 0.2s var(--spring), background 0.2s; }
+.tool { width: 30px; height: 30px; border-radius: 50%; font-size: 17px; display: flex; align-items: center; justify-content: center; padding: 0; transition: transform 0.2s var(--spring), background 0.2s; }
 .tool:hover { background: rgba(255, 255, 255, 0.1); transform: scale(1.15); }
 .tool.reply { color: var(--text-2); }
 .new-pill {
@@ -217,11 +217,11 @@ function jumpTo(id) {
 .composer { padding-top: 8px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
 .replying { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: rgba(245, 181, 68, 0.1); color: var(--text-2); font-size: 12.5px; }
 .replying svg { color: var(--gold-2); flex: none; }
-.x { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--text-2); flex: none; }
+.x { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--text-2); flex: none; }
 .row-in { display: flex; gap: 8px; }
 .row-in .input { height: 44px; border-radius: 22px; font-size: 15px; }
 .send {
-  position: relative; width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  position: relative; width: 44px; height: 44px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
   background: linear-gradient(180deg, var(--gold-2), var(--gold)); color: #2a1700; transition: transform 0.2s var(--spring), opacity 0.2s;
 }
 .send:disabled { opacity: 0.45; }

@@ -130,7 +130,7 @@ const prevIdx = computed(() => (selected.value - 1 + props.chips.length) % props
 const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
 const visibleStack = computed(() => placed.value.slice(-8));
 const sz = computed(() =>
-  props.large ? { pile: 76, mini: 56, main: 78 } : props.compact ? { pile: 50, mini: 40, main: 54 } : { pile: 64, mini: 50, main: 66 },
+  props.large ? { pile: 76, mini: 56, main: 78 } : props.compact ? { pile: 56, mini: 44, main: 60 } : { pile: 64, mini: 50, main: 66 },
 );
 </script>
 
@@ -186,16 +186,16 @@ const sz = computed(() =>
     <!-- acciones -->
     <div class="actions">
       <button class="act fold" :disabled="busy" @click="emit('action', { type: 'fold' })">Retirarse</button>
-      <!-- en grande, al apilar fichas el botón de Pasar / Igualar se convierte en el de apostar -->
-      <template v-if="!(large && pending > 0)">
+      <!-- al apilar fichas, el botón de Pasar / Igualar se convierte en el de apostar -->
+      <template v-if="!pending">
         <button v-if="legal.canCheck" class="act check" :disabled="busy" @click="emit('action', { type: 'check' })">Pasar</button>
         <button v-else class="act call" :disabled="busy" @click="emit('action', { type: 'call' })">
           Igualar <span class="num">{{ formatChips(toCall) }}</span>
         </button>
       </template>
-      <button v-if="!large || pending > 0" class="act go" :class="{ ok: verdict.ok && pending > 0 }" :disabled="!verdict.ok || !pending || busy" @click="confirm">
+      <button v-else class="act go" :class="{ ok: verdict.ok }" :disabled="!verdict.ok || busy" @click="confirm">
         <span v-if="busy" class="spinner"></span>
-        <span v-else>{{ pending ? verdict.label : 'Apila fichas' }}</span>
+        <span v-else>{{ verdict.label }}</span>
       </button>
     </div>
 
@@ -239,7 +239,7 @@ const sz = computed(() =>
 
 .table-zone { position: relative; display: flex; flex-direction: column; align-items: center; }
 .circle {
-  width: 132px; height: 132px; border-radius: 50%; position: relative; display: grid; place-items: center;
+  width: 132px; height: 132px; border-radius: 50%; position: relative; display: flex; align-items: center; justify-content: center; padding: 0;
   background: radial-gradient(circle, #0e1430 58%, #0a0f26 60%);
   box-shadow: 0 0 0 7px #0d1330, 0 0 0 8px rgba(255, 255, 255, 0.06), 0 18px 40px -16px rgba(0, 0, 0, 0.8);
   transition: transform 0.2s var(--ease);
@@ -278,7 +278,7 @@ const sz = computed(() =>
 .controls { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 440px; }
 .side { display: flex; gap: 8px; }
 .sq {
-  width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center;
+  width: 46px; height: 46px; border-radius: 14px; display: flex; align-items: center; justify-content: center; padding: 0;
   background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line-2); color: var(--text-2);
   transition: all 0.2s var(--ease);
 }
@@ -297,7 +297,7 @@ const sz = computed(() =>
 .selector:hover .mini.l { transform: translateX(-4px); }
 .selector:hover .mini.r { transform: translateX(4px); }
 
-.actions { display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 8px; width: 100%; max-width: 520px; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 520px; }
 .act {
   height: 52px; border-radius: 15px; font-weight: 800; font-size: 15px; padding: 0 8px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -333,7 +333,7 @@ const sz = computed(() =>
 .large .controls { max-width: none; }
 .large .selector { width: 150px; height: 84px; }
 .large .sq { width: 52px; height: 52px; border-radius: 16px; }
-.large .actions { max-width: none; gap: 10px; grid-template-columns: 1fr 1fr; }
+.large .actions { max-width: none; gap: 10px; }
 .large .act { height: 54px; font-size: 17px; border-radius: 18px; }
 .large .act.go { font-size: 16px; }
 .large .act.go.ok { font-size: 17px; }
@@ -355,14 +355,14 @@ const sz = computed(() =>
 .compact .selector { grid-area: s; justify-self: center; width: 104px; height: 66px; }
 .compact .selector .mini { top: 10px; }
 .compact .actions { grid-area: a; max-width: none; }
-.compact .circle { width: 92px; height: 92px; box-shadow: 0 0 0 5px #0d1330, 0 0 0 6px rgba(255, 255, 255, 0.06); }
+.compact .circle { width: 104px; height: 104px; box-shadow: 0 0 0 5px #0d1330, 0 0 0 6px rgba(255, 255, 255, 0.06); }
 .compact .ring { inset: 4px; border-width: 4px; }
-.compact .tap { font-size: 9.5px; }
+.compact .tap { font-size: 10.5px; }
 .compact .amount { font-size: 14px; margin-top: -10px; padding: 2px 10px; }
-.compact .sq { width: 40px; height: 40px; border-radius: 12px; }
-.compact .act { height: 46px; font-size: 14px; border-radius: 13px; }
-.compact .act.go.ok { font-size: 14px; }
-.compact .preset { height: 28px; font-size: 12.5px; padding: 0 10px; }
+.compact .sq { width: 44px; height: 44px; border-radius: 13px; }
+.compact .act { height: 50px; font-size: 15.5px; border-radius: 14px; }
+.compact .act.go.ok { font-size: 15.5px; }
+.compact .preset { height: 32px; font-size: 13.5px; padding: 0 11px; }
 
 /* abanico */
 .fan-overlay {

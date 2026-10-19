@@ -167,7 +167,7 @@ function removeChip(v) {
 .chips { display: flex; gap: 10px; flex-wrap: wrap; }
 .chipwrap { position: relative; }
 .rm {
-  position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  position: absolute; top: -4px; right: -4px; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0;
   background: var(--red); color: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); transition: transform 0.2s var(--spring);
 }
 .rm:hover { transform: scale(1.15); }

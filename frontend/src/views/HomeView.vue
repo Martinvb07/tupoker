@@ -190,7 +190,7 @@ function join() {
 .live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 10px var(--gold); animation: pulse-l 1.5s infinite; }
 @keyframes pulse-l { 50% { transform: scale(1.4); opacity: 0.6; } }
 .pf { flex: 0 0 300px; scroll-snap-align: start; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-color: rgba(245, 181, 68, 0.35); }
-.close-t { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; color: var(--text-3); background: rgba(255, 255, 255, 0.05); margin-right: 6px; flex: none; transition: all 0.2s; }
+.close-t { width: 30px; height: 30px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--text-3); background: rgba(255, 255, 255, 0.05); margin-right: 6px; flex: none; transition: all 0.2s; }
 .close-t:hover { color: #fecdd3; background: rgba(244, 63, 94, 0.2); }
 .hscroll { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .hscroll::-webkit-scrollbar { display: none; }

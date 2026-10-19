@@ -50,7 +50,7 @@ function pick(e) {
   transform-origin: top right;
 }
 .pop.up { top: auto; bottom: calc(100% + 8px); transform-origin: bottom right; }
-.opt { width: 46px; height: 46px; border-radius: 12px; font-size: 26px; display: grid; place-items: center; transition: transform 0.2s var(--spring), background 0.2s; }
+.opt { width: 46px; height: 46px; border-radius: 12px; font-size: 26px; line-height: 1; display: flex; align-items: center; justify-content: center; padding: 0; transition: transform 0.2s var(--spring), background 0.2s; }
 .opt:hover { background: rgba(255, 255, 255, 0.08); }
 .opt:active { transform: scale(0.85); }
 </style>
