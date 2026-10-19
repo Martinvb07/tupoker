@@ -185,6 +185,34 @@ test('la viuda: si se acaba el tiempo se destapan todas; máximo 9 jugadores', (
   assert.throws(() => e.startHand(big), /como máximo 9/);
 });
 
+test('la viuda: si pasan todos salen 5 cartas nuevas del mismo mazo', () => {
+  for (const n of [3, 9]) {
+    const t = mesa(n, Array(n).fill(0));
+    t.settings.mode = 'viuda';
+    e.startHand(t);
+    const h = t.hand;
+    e.viudaRevealAll(t);
+    for (let vuelta = 0; vuelta < 4; vuelta++) {
+      const antes = [...h.widow];
+      for (let i = 0; i < n; i++) e.viudaAct(t, h.toAct, { type: 'pass' });
+      assert.equal(h.widow.length, 5);
+      assert.ok(h.widow.every((c) => !antes.includes(c)) || n === 9); // con 9 el descarte vuelve al mazo
+      // nunca se repite una carta que tenga alguien
+      const enJuego = [...h.widow, ...h.players.flatMap((p) => p.cards)];
+      assert.equal(new Set(enJuego).size, 5 * (n + 1));
+    }
+    assert.equal(h.widowDeals, 4);
+    // si alguien cambia, la cuenta de pases vuelve a empezar
+    const antes = [...h.widow];
+    e.viudaAct(t, h.toAct, { type: 'pass' });
+    const me = e.getPlayer(h, h.toAct);
+    e.viudaAct(t, h.toAct, { type: 'swap', give: me.cards[0], take: h.widow[0] });
+    for (let i = 0; i < n - 1; i++) e.viudaAct(t, h.toAct, { type: 'pass' });
+    assert.equal(h.widowDeals, 4);
+    assert.equal(h.widow.filter((c) => antes.includes(c)).length, 4);
+  }
+});
+
 test('nueva partida devuelve las fichas iniciales', () => {
   const t = mesa(2, [2000, 0]);
   assert.throws(() => e.startHand(t));

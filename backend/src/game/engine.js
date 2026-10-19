@@ -23,7 +23,10 @@ export const modeOf = (table) => (MODES.includes(normMode(table.settings?.mode))
 const handMode = (hand) => hand.mode || 'live';
 
 function shuffledDeck() {
-  const d = [...FULL_DECK];
+  return shuffle([...FULL_DECK]);
+}
+
+function shuffle(d) {
   for (let i = d.length - 1; i > 0; i--) {
     const j = randomInt(i + 1);
     [d[i], d[j]] = [d[j], d[i]];
@@ -609,6 +612,7 @@ export function cancelHand(table) {
 //     y su mano vieja queda boca arriba en el centro. Cuando todos han visto sus cartas, empiezan los cambios.
 //  2. Fase «cambios» (por turnos): cambiar 1 carta por 1 del centro, pasar o tocar. Quien se llevó la viuda
 //     no puede tocar en su primer turno. Al tocar, los demás juegan una última vez y gana la mejor mano.
+//     Si pasan todos seguidos, el centro se descarta y se reparten 5 cartas nuevas del mismo mazo.
 
 export const VIUDA_MAX = 9; // 5 cartas por cabeza + 5 del centro: con 10 no alcanza la baraja
 
@@ -623,6 +627,9 @@ function dealViuda(hand) {
     for (const p of hand.players) p.cards.push(deck.pop());
     hand.widow.push(deck.pop());
   }
+  hand.deck = deck; // lo que sobra del mazo: de aquí salen los centros nuevos
+  hand.discards = [];
+  hand.passes = 0;
   hand.stage = 'viuda';
   hand.widowOpen = false;
   hand.knockBy = null;
@@ -666,6 +673,7 @@ export function viudaTakeWidow(table, userId) {
   p.seen = true;
   p.took = true;
   p.last = { type: 'widow' };
+  hand.passes = 0;
   log(hand, { userId, type: 'widow' });
   if (hand.stage === 'cambios') return nextViudaTurn(table, p);
   maybeStartChanges(table);
@@ -693,6 +701,7 @@ export function viudaAct(table, userId, { type, give, take } = {}) {
     p.last = { type: 'swap' };
   } else if (type === 'pass') {
     p.last = { type: 'pass' };
+    hand.passes = (hand.passes || 0) + 1;
   } else if (type === 'knock') {
     if (hand.knockBy) fail('Ya tocó otro jugador: es la última vuelta');
     if (p.took && !p.turns) fail('Te llevaste la viuda: podrás tocar en tu siguiente turno');
@@ -702,8 +711,27 @@ export function viudaAct(table, userId, { type, give, take } = {}) {
     hand.lastTurns = [];
     for (let q = nextIn(hand.players, userId, inHand); q && q.userId !== userId; q = nextIn(hand.players, q.userId, inHand)) hand.lastTurns.push(q.userId);
   } else fail('Jugada no válida');
+  if (type !== 'pass') hand.passes = 0;
   log(hand, { userId, type });
   nextViudaTurn(table, p);
+  maybeNewWidow(table);
+}
+
+/** Si en una vuelta pasan todos, el centro se descarta y salen 5 cartas nuevas del mismo mazo. */
+function maybeNewWidow(table) {
+  const hand = table.hand;
+  if (hand.stage !== 'cambios' || hand.knockBy || hand.passes < hand.players.filter(inHand).length) return;
+  hand.discards.push(...hand.widow);
+  hand.widow = [];
+  // primero las que nunca salieron; si no alcanzan, se baraja el descarte (nunca las que tiene alguien en la mano)
+  if (hand.deck.length < 5) {
+    hand.deck.unshift(...shuffle(hand.discards));
+    hand.discards = [];
+  }
+  for (let i = 0; i < 5; i++) hand.widow.push(hand.deck.pop());
+  hand.passes = 0;
+  hand.widowDeals = (hand.widowDeals || 0) + 1;
+  log(hand, { type: 'newWidow' });
 }
 
 function nextViudaTurn(table, p) {
@@ -734,6 +762,7 @@ function endViuda(table, winners, how) {
   hand.toAct = null;
   hand.finishedAt = Date.now();
   delete hand.deck;
+  delete hand.discards;
   log(hand, { type: 'end', winners });
 }
 
@@ -747,6 +776,7 @@ function viudaLeave(table, p) {
   const live = hand.players.filter(inHand);
   if (live.length < 2) return endViuda(table, live.map((x) => x.userId), 'fold');
   if (hand.stage === 'viuda') return maybeStartChanges(table);
+  if (!hand.knockBy) maybeNewWidow(table);
   if (hand.lastTurns) hand.lastTurns = hand.lastTurns.filter((id) => id !== p.userId);
   if (hand.knockBy === p.userId && !hand.lastTurns?.length) return viudaShowdown(table);
   if (wasTurn) {

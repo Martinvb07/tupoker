@@ -524,6 +524,7 @@ const iWon = computed(() => {
 watch(iWon, (won) => won && play('win'));
 watch(() => hand.value?.knockBy, (by, before) => by && !before && play('knock'));
 watch(() => hand.value?.widowOpen, (open, before) => open && before === false && play('deal'));
+watch(() => hand.value?.widowDeals, (n, before) => n > (before || 0) && hand.value?.no && play('deal'));
 
 const showResult = computed(() => playerOnly.value && payouts.value.length > 0 && !live.value && !revealing.value);
 const myWon = computed(() => payouts.value.find((w) => w.id === s.value?.me)?.amount || 0);

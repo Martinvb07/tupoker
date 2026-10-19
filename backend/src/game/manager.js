@@ -197,7 +197,7 @@ export function viewFor(table, userId) {
           log: hand.log.slice(-30),
           // la viuda: el centro solo se ve cuando está boca arriba
           ...(hand.mode === 'viuda'
-            ? { widow: hand.widowOpen || reveal ? hand.widow : [], widowOpen: !!hand.widowOpen, knockBy: hand.knockBy, lastTurns: hand.lastTurns }
+            ? { widow: hand.widowOpen || reveal ? hand.widow : [], widowOpen: !!hand.widowOpen, knockBy: hand.knockBy, lastTurns: hand.lastTurns, widowDeals: hand.widowDeals || 0 }
             : {}),
           players: hand.players.map((p) => ({
             userId: p.userId,

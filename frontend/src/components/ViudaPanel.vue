@@ -26,6 +26,8 @@ const handName = (cards) => (cards?.length === 5 ? evaluate(cards).name : '');
 const live = computed(() => props.hand.players.filter((p) => !p.folded));
 const seenCount = computed(() => live.value.filter((p) => p.seen).length);
 const canKnock = computed(() => !props.hand.knockBy && !(props.me.took && !props.me.turns));
+// pasaron todos y salió un centro nuevo (hasta que alguien vuelva a jugar)
+const newWidow = computed(() => props.hand.log?.at(-1)?.type === 'newWidow');
 
 // cambio: una carta tuya y una del centro
 const give = ref('');
@@ -105,6 +107,7 @@ const results = computed(() =>
             <button class="btn btn-lg grow vd-knock" :disabled="busy || !canKnock" @click="act('knock')"><Icon name="hand" :size="18" />Tocar</button>
           </div>
         </Transition>
+        <div v-if="newWidow" class="vd-note"><Icon name="repeat" :size="15" />Pasaron todos · 5 cartas nuevas al centro</div>
         <p v-if="myTurn && me.took && !me.turns && !hand.knockBy" class="hint">Te llevaste la viuda: podrás tocar en tu siguiente turno.</p>
         <div v-if="hand.knockBy" class="vd-note knock">
           <Icon name="hand" :size="15" />{{ hand.knockBy === me.userId ? 'Tocaste' : `Tocó ${nameOf(hand.knockBy)}` }} · última vuelta
