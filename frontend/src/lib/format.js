@@ -35,14 +35,22 @@ export const ACTION_LABEL = {
   allin: 'All-in',
   sb: 'Ciega peq.',
   bb: 'Ciega gr.',
+  // la viuda
+  pass: 'Pasa',
+  swap: 'Cambió 1',
+  widow: 'Se llevó la viuda',
+  knock: 'Tocó',
 };
 
 export const MODES = [
   { value: 'live', icon: 'hand', label: 'En vivo', short: 'En vivo', desc: 'Cartas físicas y fichas. El dealer pone el board y cada uno registra sus cartas.' },
   { value: 'random', icon: 'dice', label: 'Aleatorio', short: 'Aleatorio', desc: 'Con fichas. La app baraja y reparte las cartas y el board.' },
-  { value: 'offline', icon: 'coffee', label: 'Sin dinero', short: 'Sin dinero', desc: 'Cartas físicas sin apuestas: solo jugadas, probabilidades y ganador.' },
+  { value: 'viuda', icon: 'cards', label: 'Viuda', short: 'Viuda', desc: 'Sin fichas. 5 cartas a cada uno y 5 en el centro: cambia, pasa o toca. Gana la mejor mano.' },
 ];
-export const modeInfo = (m) => MODES.find((x) => x.value === m) || MODES[0];
+// las mesas y grupos antiguos «sin dinero» juegan a la viuda
+export const normMode = (m) => (m === 'offline' ? 'viuda' : m);
+export const noChips = (m) => normMode(m) === 'viuda';
+export const modeInfo = (m) => MODES.find((x) => x.value === normMode(m)) || MODES[0];
 
 export const CHIP_COLORS = [
   { base: '#f59e0b', edge: '#fde68a', text: '#fff' },

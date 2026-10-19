@@ -36,7 +36,7 @@ function render({ title, description, url }) {
     .replace(/(<meta name="robots" content=")[^"]*"/, '$1noindex, nofollow"');
 }
 
-const MODE = { live: 'en vivo', random: 'aleatorio', offline: 'sin dinero' };
+const MODE = { live: 'en vivo', random: 'aleatorio', viuda: 'viuda', offline: 'viuda' };
 
 r.get('/unirse/:code', async (req, res, next) => {
   if (!fs.existsSync(indexFile)) return next();
@@ -48,8 +48,8 @@ r.get('/unirse/:code', async (req, res, next) => {
     const who = owner?.displayName || owner?.username || 'Un amigo';
     const s = t.settings;
     const stakes =
-      s.mode === 'offline'
-        ? 'Partida sin dinero'
+      s.mode === 'viuda' || s.mode === 'offline'
+        ? 'La viuda, sin fichas'
         : `Ciegas ${formatChips(Math.max(1, Math.floor(s.minBet / 2)))}/${formatChips(s.minBet)} · ${formatChips(s.startingChips)} fichas`;
     res.set('Cache-Control', 'no-cache').type('html').send(
       render({

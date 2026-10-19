@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { toast, ask } from '@/lib/store.js';
-import { formatChips, modeInfo } from '@/lib/format.js';
+import { formatChips, modeInfo, noChips } from '@/lib/format.js';
 import Icon, { GROUP_ICONS } from '@/components/Icon.vue';
 import Sheet from '@/components/Sheet.vue';
 import SettingsForm from '@/components/SettingsForm.vue';
@@ -109,7 +109,7 @@ async function join() {
         <p v-if="g.description" class="desc muted small">{{ g.description }}</p>
         <div class="row tags">
           <span class="badge"><Icon :name="modeInfo(g.defaults.mode).icon" :size="12" />{{ modeInfo(g.defaults.mode).short }}</span>
-          <template v-if="g.defaults.mode !== 'offline'">
+          <template v-if="!noChips(g.defaults.mode)">
             <span class="badge">Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }}</span>
             <span class="badge">{{ formatChips(g.defaults.startingChips) }} fichas</span>
           </template>

@@ -35,7 +35,7 @@ const settingsSchema = {
   minBet: { type: Number, default: 100 },
   maxBet: { type: Number, default: 0 }, // 0 = sin límite
   startingChips: { type: Number, default: 10000 },
-  mode: { type: String, enum: ['live', 'random', 'offline'], default: 'live' },
+  mode: { type: String, enum: ['live', 'random', 'viuda', 'offline'], default: 'live' },
   chips: { type: [Number], default: [] }, // denominaciones elegidas por el dealer (vacío = automáticas)
   scan: { type: Boolean, default: false }, // escanear cartas con la cámara (opcional, necesita ANTHROPIC_API_KEY)
 };

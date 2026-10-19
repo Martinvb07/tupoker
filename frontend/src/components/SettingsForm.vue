@@ -2,7 +2,7 @@
 // Configuración de la mesa: modo de juego, mínima, máxima, fichas iniciales y valores de las fichas.
 import { computed, ref } from 'vue';
 import { chipDenominations } from '@shared/poker.js';
-import { formatChips, MODES } from '@/lib/format.js';
+import { formatChips, MODES, normMode } from '@/lib/format.js';
 import Chip from './Chip.vue';
 import Icon from './Icon.vue';
 import { onMounted } from 'vue';
@@ -14,7 +14,7 @@ defineProps({ hideStarting: Boolean, hideMode: Boolean });
 
 const MIN_PRESETS = [10, 50, 100, 500, 1000, 5000, 10000];
 const set = (k, v) => (model.value = { ...model.value, [k]: v });
-const mode = computed(() => model.value.mode || 'live');
+const mode = computed(() => normMode(model.value.mode) || 'live');
 const custom = computed(() => (model.value.chips || []).length > 0);
 const autoChips = computed(() =>
   chipDenominations(Number(model.value.minBet) || 1, Number(model.value.maxBet) || 0, Number(model.value.startingChips) || 0),
@@ -61,7 +61,7 @@ function removeChip(v) {
     </div>
 
     <Transition name="fade">
-      <div v-if="mode !== 'offline'" class="stack">
+      <div v-if="mode !== 'viuda'" class="stack">
         <label class="field">
           <span>Apuesta mínima (ciega grande)</span>
           <input class="input num" type="number" min="1" inputmode="numeric" :value="model.minBet" @input="set('minBet', Number($event.target.value))" />
@@ -114,7 +114,7 @@ function removeChip(v) {
       </div>
     </Transition>
 
-    <label v-if="mode !== 'random'" class="toggle">
+    <label v-if="mode === 'live'" class="toggle">
       <div>
         <b class="row" style="gap: 6px"><Icon name="camera" :size="16" />Escanear cartas con la cámara</b>
         <div class="small muted">
@@ -127,7 +127,10 @@ function removeChip(v) {
     </label>
 
     <Transition name="fade">
-      <p v-if="mode === 'offline'" class="hint offline-note">En este modo no hay fichas ni apuestas: el dealer pone las cartas comunes y la app dice qué lleva cada uno y quién gana.</p>
+      <p v-if="mode === 'viuda'" class="hint offline-note">
+        Sin fichas ni dealer. La app reparte 5 cartas a cada uno y 5 boca abajo al centro (la viuda). Sin ver tus cartas puedes llevarte las del centro;
+        cuando todos han visto las suyas, por turnos: cambia 1 carta por 1 del centro, pasa o toca. Al tocar, los demás juegan una última vez y gana la mejor mano. De 2 a 9 jugadores.
+      </p>
     </Transition>
   </div>
 </template>

@@ -6,7 +6,7 @@ import Avatar from './Avatar.vue';
 import Icon from './Icon.vue';
 import Segmented from './Segmented.vue';
 import SettingsForm from './SettingsForm.vue';
-import { formatChips, formatSigned } from '@/lib/format.js';
+import { formatChips, formatSigned, noChips } from '@/lib/format.js';
 import { ask } from '@/lib/store.js';
 
 const props = defineProps({
@@ -38,7 +38,7 @@ watch(() => props.open, (o) => {
     tab.value = tabs.value.some((t) => t.value === props.initialTab) ? props.initialTab : 'players';
   }
 });
-const offline = computed(() => (props.state.settings.mode || 'live') === 'offline');
+const offline = computed(() => noChips(props.state.settings.mode));
 async function newGame() {
   if (!(await ask({ title: '¿Empezar una nueva partida?', message: `Todos vuelven a ${formatChips(props.state.settings.startingChips)} fichas.`, confirmLabel: 'Nueva partida', icon: 'rotate' }))) return;
   if (await props.run('dealer:resetChips')) emit('close');

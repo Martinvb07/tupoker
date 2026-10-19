@@ -18,7 +18,8 @@ export async function closeTableNow(t) {
 const r = Router();
 r.use(requireAuth);
 
-const MODES = ['live', 'random', 'offline'];
+const MODES = ['live', 'random', 'viuda'];
+const normMode = (m) => (m === 'offline' ? 'viuda' : m); // «sin dinero» pasó a ser la viuda
 
 function cleanChips(list) {
   if (!Array.isArray(list)) return [];
@@ -32,7 +33,7 @@ export function cleanSettings(input = {}, base = {}) {
     minBet: num(input.minBet, base.minBet ?? 100),
     maxBet: num(input.maxBet, base.maxBet ?? 0),
     startingChips: num(input.startingChips, base.startingChips ?? 10000),
-    mode: MODES.includes(input.mode) ? input.mode : MODES.includes(base.mode) ? base.mode : 'live',
+    mode: MODES.includes(normMode(input.mode)) ? normMode(input.mode) : MODES.includes(normMode(base.mode)) ? normMode(base.mode) : 'live',
     chips: cleanChips(input.chips !== undefined ? input.chips : base.chips ? [...base.chips] : []),
     scan: input.scan !== undefined ? !!input.scan : !!base.scan,
   };

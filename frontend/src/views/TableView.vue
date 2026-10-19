@@ -21,6 +21,7 @@ import ShowdownStrip from '@/components/ShowdownStrip.vue';
 import ScanButton from '@/components/ScanButton.vue';
 import ChatPanel from '@/components/ChatPanel.vue';
 import ReactButtons from '@/components/ReactButtons.vue';
+import ViudaPanel from '@/components/ViudaPanel.vue';
 import { useTween } from '@/lib/tween.js';
 import { scanEnabled, checkScan } from '@/lib/vision.js';
 
@@ -54,10 +55,13 @@ const hand = computed(() => s.value?.hand);
 const live = computed(() => !!hand.value && hand.value.stage !== 'done');
 // el modo de la mano en curso manda; entre manos, el de la mesa
 const mode = computed(() => (live.value ? hand.value.mode : s.value?.settings.mode) || 'live');
-const offline = computed(() => mode.value === 'offline');
+// la viuda no tiene fichas ni dealer; aleatorio y viuda: la app reparte, turnos con tiempo y manos que salen solas
+const viuda = computed(() => mode.value === 'viuda');
+const noChips = viuda;
 const random = computed(() => mode.value === 'random');
+const auto = computed(() => random.value || viuda.value);
 const manager = computed(() => !!s.value?.canManage);
-const showDealerBar = computed(() => manager.value && !random.value);
+const showDealerBar = computed(() => manager.value && !auto.value);
 // en vivo los jugadores (todos menos el dealer) no ven la mesa: solo sus fichas, el bote y los botones para apostar
 // en vivo el dealer no juega: no tiene asiento en la mesa ni fichas, solo reparte
 const liveDealer = computed(() => mode.value === 'live' && !!s.value && s.value.dealerId === s.value.me);
@@ -194,7 +198,7 @@ const revealed = computed(() => {
   const list = h.players.filter((p) => !p.folded && p.cards?.length === 2);
   if (list.length < 2 || !list.some((p) => p.userId !== s.value.me)) return [];
   const r = hand.value?.result;
-  const isWinner = (id) => !!r && (h.mode === 'offline' ? r.winners.includes(id) : (r.payout?.[id] || 0) > 0);
+  const isWinner = (id) => !!r && (r.payout?.[id] || 0) > 0;
   return list.map((p) => ({
     userId: p.userId,
     seat: seatsById.value[p.userId] || { displayName: '—' },
@@ -207,7 +211,7 @@ const winnerText = computed(() => {
   const h = view.value;
   const r = h?.result;
   if (!r || h.stage !== 'done') return '';
-  if (h.mode === 'offline') {
+  if (h.mode === 'viuda') {
     return r.winners.map((id) => `${nameOf(id)} ${id === s.value.me ? 'ganas' : 'gana'}${handNames.value[id] ? ' con ' + handNames.value[id] : ''}`).join(' · ');
   }
   return Object.entries(r.payout)
@@ -219,12 +223,12 @@ const winnerText = computed(() => {
 // ---------- partida terminada / recompras ----------
 const activeSeats = computed(() => (s.value?.seats || []).filter((x) => x.status === 'active' && playing(x)));
 const withChips = computed(() => activeSeats.value.filter((x) => x.chips > 0));
-const gameOver = computed(() => !!s.value && !offline.value && !live.value && !revealing.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
+const gameOver = computed(() => !!s.value && !noChips.value && !live.value && !revealing.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
 const champion = computed(() => (gameOver.value && withChips.value.length === 1 ? withChips.value[0] : null));
 const canStart = computed(() => {
   if (live.value) return false;
-  if (!manager.value && !(random.value && mySeat.value)) return false;
-  return (offline.value ? activeSeats.value.length : withChips.value.length) >= 2;
+  if (!manager.value && !(auto.value && mySeat.value)) return false;
+  return (noChips.value ? activeSeats.value.length : withChips.value.length) >= 2;
 });
 // en vivo: peticiones que aprueba el dealer
 const rebuyRequests = computed(() =>
@@ -261,7 +265,7 @@ async function saveMyCards(cards) {
     if (await run('table:cards', { cards })) toast.success('Cartas guardadas');
   } else picker.value = { open: true, mode: 'hole', initial: cards };
 }
-const canRebuy = computed(() => !!mySeat.value && !liveDealer.value && !offline.value && (!me.value || me.value.folded || !live.value));
+const canRebuy = computed(() => !!mySeat.value && !liveDealer.value && !noChips.value && (!me.value || me.value.folded || !live.value));
 const rebuyLabel = computed(() => 'Pedir recompra');
 const rebuyOpen = ref(false);
 const rebuyAmount = ref(0);
@@ -453,22 +457,22 @@ const openPicker = (m) => {
 watch(
   () => hand.value?.awaiting,
   (aw) => {
-    if (aw && manager.value && !random.value && !offline.value) setTimeout(() => openPicker('board'), 450);
+    if (aw && manager.value && !auto.value) setTimeout(() => openPicker('board'), 450);
     if (!aw && picker.value.mode === 'board') picker.value.open = false;
   },
 );
 watch(
   () => hand.value?.stage,
   (st) => {
-    if (st === 'showdown' && manager.value && !random.value) showShowdown.value = true;
+    if (st === 'showdown' && manager.value && !auto.value) showShowdown.value = true;
     if (st !== 'showdown') showShowdown.value = false;
-    if (st === 'preflop' && me.value && !myCards.value.length && !random.value && showMyCards.value) {
+    if (st === 'preflop' && me.value && !myCards.value.length && !auto.value && showMyCards.value) {
       toast(scanOn.value ? 'Nueva mano: escanea tus cartas para ver tu probabilidad' : 'Nueva mano: registra tus cartas para ver tu probabilidad', 'info', 3000);
     }
   },
 );
 
-const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => view.value?.board[i] || ''));
+const boardSlots = computed(() => Array.from({ length: 5 }, (_, i) => (viuda.value ? view.value?.widow?.[i] : view.value?.board[i]) || ''));
 const toActName = computed(() => (hand.value?.toAct ? nameOf(hand.value.toAct) : ''));
 const turnLeft = computed(() => secondsTo(hand.value?.turnDeadline));
 // duración del turno: lo que quedaba al empezar (para la barra que se vacía)
@@ -476,6 +480,8 @@ const turnTotal = ref(0);
 watch(() => hand.value?.turnDeadline, (d) => (turnTotal.value = d ? Math.max(1, secondsTo(d)) : 0));
 const turnPct = computed(() => (turnTotal.value ? Math.min(100, (turnLeft.value / turnTotal.value) * 100) : 0));
 const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
+const seeLeft = computed(() => secondsTo(hand.value?.seeDeadline));
+const viudaTurn = computed(() => viuda.value && hand.value?.stage === 'cambios' && hand.value.toAct === s.value?.me);
 const statusLine = computed(() => {
   const h = view.value;
   if (!s.value) return '';
@@ -484,12 +490,14 @@ const statusLine = computed(() => {
   if (gameOver.value) return !champion.value ? 'Partida terminada' : champion.value.userId === s.value.me ? '¡Ganaste la partida!' : `${nameOf(champion.value.userId)} ganó la partida`;
   if (!h || h.stage === 'done') {
     if (nextHandIn.value) return `Siguiente mano en ${nextHandIn.value}s`;
-    if (random.value) return 'Esperando jugadores';
+    if (auto.value) return 'Esperando jugadores';
     return manager.value ? 'Listo para repartir' : 'Esperando al dealer';
   }
   if (h.awaiting) return `El dealer pone el ${STAGE_LABEL[h.awaiting]}`;
-  if (h.stage === 'showdown') return offline.value ? 'Showdown: el dealer confirma quién gana' : 'Showdown: el dealer reparte el bote';
-  const t = random.value && turnLeft.value ? ` · ${turnLeft.value}s` : '';
+  if (h.stage === 'showdown') return 'Showdown: el dealer reparte el bote';
+  const t = auto.value && turnLeft.value ? ` · ${turnLeft.value}s` : '';
+  if (h.stage === 'viuda') return `La viuda: mirad vuestras cartas${seeLeft.value ? ` · ${seeLeft.value}s` : ''}`;
+  if (h.knockBy && h.toAct) return `Última vuelta · turno de ${h.toAct === s.value.me ? 'ti' : toActName.value}${t}`;
   if (h.toAct === s.value.me) return `¡Es tu turno!${t}`;
   if (h.toAct) return `Turno de ${toActName.value}${t}`;
   return STAGE_LABEL[h.stage];
@@ -542,7 +550,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: myTurn && !offline, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
+  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -552,7 +560,7 @@ watch(
           <span class="dotc" :class="{ on: connected }"></span>
           <span class="mbadge"><Icon :name="info.icon" :size="13" />{{ info.short }}</span>
           <span v-if="hand" class="hno">· #{{ hand.no }}</span>
-          <template v-if="!offline">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
+          <template v-if="!noChips">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
       <button class="codebtn" @click="showShare = true"><Icon name="qr" :size="16" />{{ s.code }}</button>
@@ -622,12 +630,15 @@ watch(
         <div class="rail"></div>
         <div class="center">
           <Transition name="pop">
-            <div v-if="totalPot > 0 && !offline" class="pot num" key="pot">
+            <div v-if="totalPot > 0 && !noChips" class="pot num" key="pot">
               <span class="pot-chip"></span>Bote {{ formatChips(totalPot) }}
+            </div>
+            <div v-else-if="viuda && hand && hand.stage !== 'done'" class="pot" key="viuda">
+              <Icon name="cards" :size="16" />{{ hand.widowOpen ? 'La viuda · boca arriba' : 'La viuda' }}
             </div>
           </Transition>
           <div class="board">
-            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :placeholder="!c" :size="isMobile && (myTurn || layout.length >= 5) ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
+            <PlayingCard v-for="(c, i) in boardSlots" :key="i" :card="c" :delay="viuda ? i * 0.12 : 0" :placeholder="!c && !(viuda && hand && hand.stage !== 'done')" :size="isMobile && (myTurn || layout.length >= 5) ? 'sm' : 'md'" class="bslot"><span></span></PlayingCard>
           </div>
           <!-- en móvil, con el resultado encima de la mesa, no se repite quién gana -->
           <Transition name="fade" mode="out-in">
@@ -645,11 +656,11 @@ watch(
             :hand="view"
             :mode="mode"
             :is-me="l.seat.userId === s.me"
-            :is-dealer="!random && l.seat.userId === s.dealerId"
-            :hand-name="revealed.length ? '' : handNames[l.seat.userId]"
-            :quiet="revealed.length > 0"
+            :is-dealer="!auto && l.seat.userId === s.dealerId"
+            :hand-name="revealed.length || viuda ? '' : handNames[l.seat.userId]"
+            :quiet="revealed.length > 0 || (viuda && hand?.stage === 'done')"
             :bet-dir="l.dir"
-            :seconds-left="random && hand?.toAct === l.seat.userId ? turnLeft : 0"
+            :seconds-left="auto && hand?.toAct === l.seat.userId ? turnLeft : 0"
             :bet-reach="isMobile ? 0.68 : layout.length >= 5 ? 0.58 : 1"
             :reaction="reactions[l.seat.userId]"
           />
@@ -685,12 +696,12 @@ watch(
           <Avatar :user="mySeat" :size="28" />
           <Transition name="react"><span v-if="reactions[s.me]" :key="reactions[s.me].id" class="mb-react">{{ reactions[s.me].emoji }}</span></Transition>
         </span>
-        <b class="num">{{ offline || liveDealer ? 'Tú' : formatChips(myView ? myView.stack : mySeat.chips) }}</b>
+        <b class="num">{{ noChips || liveDealer ? 'Tú' : formatChips(myView ? myView.stack : mySeat.chips) }}</b>
         <span v-if="myBadge" class="mb-badge">{{ myBadge }}</span>
         <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
-        <span v-if="!random && s.dealerId === s.me" class="mb-dealer"><Icon name="dealer" :size="13" />Dealer</span>
+        <span v-if="!auto && s.dealerId === s.me" class="mb-dealer"><Icon name="dealer" :size="13" />Dealer</span>
         <span class="grow"></span>
-        <span v-if="myTurn && random && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }"><Icon name="timer" :size="15" />{{ turnLeft }}s</span>
+        <span v-if="(myTurn || viudaTurn) && auto && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }"><Icon name="timer" :size="15" />{{ turnLeft }}s</span>
         <ReactButtons :emojis="EMOJIS" :unread="chat.unread" up @chat="openChat" @react="react" />
       </div>
 
@@ -717,7 +728,7 @@ watch(
             <button v-if="canRebuy && mySeat.chips <= 0" class="btn grow" :class="{ 'btn-primary': !manager }" :disabled="busy || !!mySeat.rebuyRequest" @click="rebuy">
               <Icon name="coins" :size="18" />{{ mySeat.rebuyRequest ? 'Recompra pedida' : rebuyLabel }}
             </button>
-            <button v-if="manager && !random" class="btn" @click="openMenu('players')"><Icon name="users" :size="18" /></button>
+            <button v-if="manager && !auto" class="btn" @click="openMenu('players')"><Icon name="users" :size="18" /></button>
           </div>
           <p class="hint">"Nueva partida" devuelve a todos {{ formatChips(s.settings.startingChips) }} fichas. Con recompra entra quien quiera seguir.</p>
         </div>
@@ -805,11 +816,10 @@ watch(
           <button class="btn btn-primary btn-lg grow glow" @click="openPicker('board')">
             <Icon name="cards" :size="18" />Poner el {{ STAGE_LABEL[hand.awaiting] }}
           </button>
-          <button v-if="offline && hand.stage !== 'preflop'" class="btn btn-sm btn-ghost" :disabled="busy" title="Corregir cartas" @click="run('dealer:undoBoard')"><Icon name="undo" :size="16" /></button>
         </template>
         <template v-else-if="hand.stage === 'showdown'">
           <button class="btn btn-success btn-lg grow glow" @click="showShowdown = true">
-            <Icon name="trophy" :size="18" />{{ offline ? 'Elegir ganador' : 'Repartir el bote' }}
+            <Icon name="trophy" :size="18" />Repartir el bote
           </button>
         </template>
         <template v-else>
@@ -819,11 +829,11 @@ watch(
         </template>
       </div>
       <p v-if="showDealerBar && !canStart && !live && !gameOver" class="hint center">
-        {{ offline ? 'Se necesitan al menos 2 jugadores activos.' : 'Se necesitan al menos 2 jugadores activos con fichas.' }}
+        Se necesitan al menos 2 jugadores activos con fichas.
       </p>
 
       <!-- modo aleatorio: sin dealer, las manos salen solas -->
-      <div v-if="random && !live && !gameOver && !revealing" class="autobar">
+      <div v-if="auto && !live && !gameOver && !revealing" class="autobar">
         <template v-if="nextHandIn">
           <div class="countdown num">{{ nextHandIn }}</div>
           <span class="grow">Siguiente mano en {{ nextHandIn }}s</span>
@@ -836,7 +846,23 @@ watch(
       </div>
 
       <!-- jugador -->
-      <div v-if="me && live && (playerOnly || !revealed.length)" class="player">
+      <!-- la viuda: tus cartas, la viuda y los cambios -->
+      <ViudaPanel
+        v-if="viuda && me && hand"
+        class="rise"
+        :hand="view"
+        :me="me"
+        :seats-by-id="seatsById"
+        :my-turn="viudaTurn"
+        :turn-left="turnLeft"
+        :turn-pct="turnPct"
+        :see-left="seeLeft"
+        :busy="busy"
+        @see="run('viuda:see')"
+        @take="run('viuda:take')"
+        @act="(p) => run('viuda:act', p)"
+      />
+      <div v-if="me && live && !viuda && (playerOnly || !revealed.length)" class="player">
         <template v-if="playerOnly">
           <div v-if="!myTurn && (me.folded || myCards.length < 2)" class="physical">
             <template v-if="me.folded">Te has retirado de esta mano</template>
@@ -879,14 +905,13 @@ watch(
             <Icon name="edit" :size="18" />
           </button>
         </div>
-        <button v-if="offline && !me.folded && hand.stage !== 'showdown'" class="btn btn-danger btn-block" :disabled="busy" @click="run('table:fold')">Retirarme de esta mano</button>
         <div v-if="myTurn && random && turnLeft" class="tbar rise" :class="{ low: turnLeft <= 10 }">
           <i :style="{ width: turnPct + '%' }"></i>
           <span><Icon name="timer" :size="15" />Tu turno · {{ turnLeft }}s</span>
         </div>
         <Transition name="betpad">
-          <div v-if="myTurn && !offline && paused" class="paused-note"><Icon name="pause" :size="16" />Tu turno espera: la partida está en pausa por una recompra</div>
-          <div v-else-if="myTurn && !offline" class="padwrap">
+          <div v-if="myTurn && !noChips && paused" class="paused-note"><Icon name="pause" :size="16" />Tu turno espera: la partida está en pausa por una recompra</div>
+          <div v-else-if="myTurn && !noChips" class="padwrap">
             <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="isMobile && !playerOnly" :large="playerOnly" @action="doAction" />
           </div>
         </Transition>
@@ -925,19 +950,19 @@ watch(
           </div>
         </template>
       </div>
-      <div v-else-if="mySeat && !gameOver && !liveDealer && !(showDealerBar && !(mySeat.status === 'sitout' && !live))" class="waiting">
+      <div v-else-if="mySeat && !gameOver && !liveDealer && !(viuda && me && hand) && !(showDealerBar && !(mySeat.status === 'sitout' && !live))" class="waiting">
         <template v-if="mySeat.status === 'sitout'">
           <span>{{ mySeat.timeouts >= 2 ? 'Te sentamos fuera por inactividad' : 'Estás fuera de la mesa' }}</span>
           <button class="btn btn-sm btn-primary" @click="run('table:sitout', { sitout: false })">Volver a jugar</button>
         </template>
-        <template v-else-if="mySeat.chips <= 0 && !offline">
+        <template v-else-if="mySeat.chips <= 0 && !noChips">
           <span>Te quedaste sin fichas</span>
           <button class="btn btn-sm btn-primary" :disabled="busy || !!mySeat.rebuyRequest" @click="rebuy">
             {{ mySeat.rebuyRequest ? 'Recompra pedida…' : rebuyLabel }}
           </button>
         </template>
         <template v-else-if="live">Entrarás en la siguiente mano</template>
-        <template v-else-if="!random && !playerOnly">Esperando a que el dealer reparta…</template>
+        <template v-else-if="!auto && !playerOnly">Esperando a que el dealer reparta…</template>
       </div>
       <!-- chat fijo en la columna derecha (PC) -->
       <div v-if="isWide" class="chat-box">

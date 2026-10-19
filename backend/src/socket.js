@@ -44,7 +44,7 @@ export function initSocket(httpServer) {
           const paused = PAUSABLE.has(event) && engine.pausedBy(table);
           if (paused) throw new GameError(`Partida en pausa: recompra de ${paused.displayName} pendiente`);
           if (manage && !canManage(table, uid)) {
-            throw new GameError(engine.modeOf(table) === 'random' ? 'Solo el anfitrión puede hacer esto' : 'Solo el dealer puede hacer esto');
+            throw new GameError(['random', 'viuda'].includes(engine.modeOf(table)) ? 'Solo el anfitrión puede hacer esto' : 'Solo el dealer puede hacer esto');
           }
           const result = await fn(table, payload);
           if (result !== false) commit(table);
@@ -182,7 +182,7 @@ export function initSocket(httpServer) {
       const heir = others.find((s) => s.status === 'active') || others[0];
       if (heir && t.dealerId === uid) {
         t.dealerId = heir.userId;
-        if (engine.modeOf(t) !== 'random') notifyUser(heir.userId, 'table:notice', { message: `Ahora eres el dealer de ${t.name}` });
+        if (!['random', 'viuda'].includes(engine.modeOf(t))) notifyUser(heir.userId, 'table:notice', { message: `Ahora eres el dealer de ${t.name}` });
       }
       if (heir && t.ownerId === uid) t.ownerId = heir.userId;
       engine.foldOut(t, uid);
@@ -194,10 +194,19 @@ export function initSocket(httpServer) {
     });
 
     // Modo sin dinero: cualquiera puede retirarse en cualquier momento
-    handle('table:fold', (t) => {
-      if (engine.modeOf(t) !== 'offline') throw new GameError('Usa el botón de retirarse cuando sea tu turno');
-      if (!engine.getPlayer(t.hand, uid)) throw new GameError('No estás en esta mano');
-      engine.foldOut(t, uid);
+    // La viuda: ver tus cartas, llevarte las del centro sin verlas y, por turnos, cambiar 1 / pasar / tocar
+    const viudaTurn = (t) => {
+      const seat = mySeat(t);
+      if (seat) seat.timeouts = 0;
+    };
+    handle('viuda:see', (t) => engine.viudaSee(t, uid));
+    handle('viuda:take', (t) => {
+      engine.viudaTakeWidow(t, uid);
+      viudaTurn(t);
+    });
+    handle('viuda:act', (t, { type, give, take }) => {
+      engine.viudaAct(t, uid, { type, give, take });
+      viudaTurn(t);
     });
 
     // Recompra. Se juega con dinero real, así que nadie se pone fichas solo:
@@ -248,7 +257,7 @@ export function initSocket(httpServer) {
     // ---------- Gestión (dealer / anfitrión) ----------
     // En aleatorio cualquier jugador sentado puede repartir la primera mano
     handle('dealer:start', (t) => {
-      if (!canManage(t, uid) && !(engine.modeOf(t) === 'random' && mySeat(t))) throw new GameError('Solo el dealer puede repartir');
+      if (!canManage(t, uid) && !(['random', 'viuda'].includes(engine.modeOf(t)) && mySeat(t))) throw new GameError('Solo el dealer puede repartir');
       engine.startHand(t);
     });
     // En vivo: la siguiente mano sale tras una cuenta atrás, para que el dealer pague antes el bote
@@ -296,6 +305,7 @@ export function initSocket(httpServer) {
 
     handle('dealer:chips', (t, { userId, amount, mode }) => {
       if (engine.modeOf(t) === 'random') throw new GameError('En modo aleatorio las recompras se aprueban entre todos');
+      if (engine.modeOf(t) === 'viuda') throw new GameError('En la viuda no hay fichas');
       const seat = t.seats.find((s) => s.userId === userId);
       if (!seat) throw new GameError('Jugador no encontrado');
       const p = engine.isHandLive(t) ? engine.getPlayer(t.hand, userId) : null;

@@ -100,7 +100,7 @@ test('modo aleatorio: la app reparte cartas y board y resuelve sola', () => {
   e.startHand(t);
   const all = t.hand.players.flatMap((p) => p.cards);
   assert.equal(new Set(all).size, 6);
-  assert.throws(() => e.setHoleCards(t, 'p0', ['As', 'Ks']), /aleatorio/);
+  assert.throws(() => e.setHoleCards(t, 'p0', ['As', 'Ks']), /la app reparte/);
   e.act(t, t.hand.toAct, 'call');
   e.act(t, t.hand.toAct, 'call');
   e.act(t, t.hand.toAct, 'check');
@@ -125,24 +125,64 @@ test('modo aleatorio: all-in preflop reparte todo el board', () => {
   assert.equal(total(t), 2000);
 });
 
-test('modo sin dinero: sin apuestas, el dealer pone cartas y elige ganador', () => {
+test('la viuda: reparto, ver, llevarse el centro, cambios, tocar y ganador', () => {
   const t = mesa(3, [0, 0, 0]);
-  t.settings.mode = 'offline';
+  t.settings.mode = 'viuda';
   e.startHand(t);
-  assert.equal(t.hand.awaiting, 'flop');
-  assert.throws(() => e.act(t, 'p0', 'check'), /sin dinero/);
-  e.setHoleCards(t, 'p0', ['Ah', 'Ad']);
-  e.setHoleCards(t, 'p1', ['Kh', 'Kd']);
-  e.setBoard(t, ['As', '7d', '2c']);
-  assert.equal(t.hand.awaiting, 'turn');
-  e.foldOut(t, 'p2');
-  e.setBoard(t, ['9h']);
-  e.setBoard(t, ['3s']);
-  assert.equal(t.hand.stage, 'showdown');
-  assert.deepEqual(t.hand.pots[0].suggested, ['p0']);
-  e.resolveShowdown(t, [['p0']]);
-  assert.deepEqual(t.hand.result.winners, ['p0']);
-  assert.equal(t.hand.needsPersist, undefined);
+  const h = t.hand;
+  assert.equal(h.stage, 'viuda');
+  assert.equal(h.widow.length, 5);
+  assert.ok(h.players.every((p) => p.cards.length === 5 && !p.seen));
+  assert.equal(new Set([...h.widow, ...h.players.flatMap((p) => p.cards)]).size, 20);
+  assert.throws(() => e.act(t, 'p0', 'check'), /no hay apuestas/);
+  // p1 se lleva el centro sin ver; su mano queda boca arriba en el centro
+  const vieja = [...e.getPlayer(h, 'p1').cards];
+  e.viudaTakeWidow(t, 'p1');
+  assert.deepEqual(h.widow, vieja);
+  assert.ok(h.widowOpen);
+  // quien ya vio sus cartas no puede llevarse el centro
+  e.viudaSee(t, 'p0');
+  assert.throws(() => e.viudaTakeWidow(t, 'p0'), /Ya viste/);
+  assert.equal(h.stage, 'viuda');
+  e.viudaSee(t, 'p2'); // todos vieron: empiezan los cambios
+  assert.equal(h.stage, 'cambios');
+  const first = h.toAct;
+  assert.throws(() => e.viudaAct(t, first === 'p0' ? 'p2' : 'p0', { type: 'pass' }), /No es tu turno/);
+  // quien se llevó la viuda no puede tocar en su primer turno
+  while (h.toAct !== 'p1') e.viudaAct(t, h.toAct, { type: 'pass' });
+  assert.throws(() => e.viudaAct(t, 'p1', { type: 'knock' }), /siguiente turno/);
+  // cambiar 1 por 1 del centro
+  const me = e.getPlayer(h, 'p1');
+  const give = me.cards[0], take = h.widow[0];
+  e.viudaAct(t, 'p1', { type: 'swap', give, take });
+  assert.ok(me.cards.includes(take) && h.widow.includes(give));
+  // toca el siguiente: los otros dos juegan una última vez y se acaba
+  const knocker = h.toAct;
+  e.viudaAct(t, knocker, { type: 'knock' });
+  assert.equal(h.lastTurns.length, 2);
+  assert.throws(() => e.viudaAct(t, h.toAct, { type: 'knock' }), /última vuelta/);
+  e.viudaAct(t, h.toAct, { type: 'pass' });
+  e.viudaAct(t, h.toAct, { type: 'pass' });
+  assert.equal(h.stage, 'done');
+  assert.ok(h.result.winners.length >= 1);
+  assert.equal(Object.keys(h.handNames).length, 3);
+  assert.equal(h.needsPersist, undefined); // la viuda no cuenta para los rankings
+});
+
+test('la viuda: si se acaba el tiempo se destapan todas; máximo 9 jugadores', () => {
+  const t = mesa(2, [0, 0]);
+  t.settings.mode = 'offline'; // las mesas antiguas «sin dinero» juegan a la viuda
+  e.startHand(t);
+  assert.equal(t.hand.mode, 'viuda');
+  e.viudaRevealAll(t);
+  assert.equal(t.hand.stage, 'cambios');
+  // si uno se va, gana el otro
+  e.foldOut(t, t.hand.toAct);
+  assert.equal(t.hand.stage, 'done');
+  assert.equal(t.hand.result.winners.length, 1);
+  const big = mesa(10, Array(10).fill(0));
+  big.settings.mode = 'viuda';
+  assert.throws(() => e.startHand(big), /como máximo 9/);
 });
 
 test('nueva partida devuelve las fichas iniciales', () => {
@@ -161,8 +201,8 @@ test('recompra: solo fuera de una mano viva y suma las fichas iniciales', () => 
   assert.throws(() => e.applyRebuy(t, 'p0'), /termine la mano/);
   e.act(t, t.hand.toAct, 'fold');
   e.applyRebuy(t, 'p0');
-  t.settings.mode = 'offline';
-  assert.throws(() => e.checkRebuy(t, 'p0'), /sin dinero/);
+  t.settings.mode = 'viuda';
+  assert.throws(() => e.checkRebuy(t, 'p0'), /no hay fichas/);
 });
 
 test('recompra votada: se aplica solo cuando aceptan todos los demás', () => {

@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { toast } from '@/lib/store.js';
-import { formatChips, modeInfo } from '@/lib/format.js';
+import { formatChips, modeInfo, noChips } from '@/lib/format.js';
 import { chipDenominations } from '@shared/poker.js';
 import Avatar from '@/components/Avatar.vue';
 import Chip from '@/components/Chip.vue';
@@ -28,7 +28,7 @@ onMounted(async () => {
 
 const chips = computed(() => {
   const st = table.value?.settings;
-  if (!st || st.mode === 'offline') return [];
+  if (!st || noChips(st.mode)) return [];
   return st.chips?.length ? st.chips : chipDenominations(st.minBet, st.maxBet, st.startingChips);
 });
 const mode = computed(() => modeInfo(table.value?.settings.mode));
@@ -70,7 +70,7 @@ async function join() {
 
       <div class="facts">
         <div class="wide"><span>Modo</span><b class="row" style="gap: 6px"><Icon :name="mode.icon" :size="16" />{{ mode.label }}</b><small class="muted">{{ mode.desc }}</small></div>
-        <template v-if="table.settings.mode !== 'offline'">
+        <template v-if="!noChips(table.settings.mode)">
           <div><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
           <div><span>Máxima</span><b class="num">{{ table.settings.maxBet ? formatChips(table.settings.maxBet) : 'Sin límite' }}</b></div>
           <div><span>Fichas iniciales</span><b class="num">{{ formatChips(table.settings.startingChips) }}</b></div>

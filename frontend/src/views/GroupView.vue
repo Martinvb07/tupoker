@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { auth, toast, ask } from '@/lib/store.js';
-import { formatChips, timeAgo, modeInfo } from '@/lib/format.js';
+import { formatChips, timeAgo, modeInfo, noChips } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import Segmented from '@/components/Segmented.vue';
@@ -160,7 +160,7 @@ const isOwner = computed(() => g.value?.ownerId === auth.user.id);
             <p class="small muted" v-if="g.activeTable">{{ g.activeTable.players }} jugadores · mano {{ g.activeTable.handNo }}</p>
             <p class="small muted" v-else>
               <Icon :name="modeInfo(g.defaults.mode).icon" :size="14" class="inl" /> {{ modeInfo(g.defaults.mode).short }}
-              <template v-if="g.defaults.mode !== 'offline'">
+              <template v-if="!noChips(g.defaults.mode)">
                 · Ciegas {{ formatChips(Math.max(1, Math.floor(g.defaults.minBet / 2))) }}/{{ formatChips(g.defaults.minBet) }} ·
                 {{ g.defaults.maxBet ? 'máx ' + formatChips(g.defaults.maxBet) : 'sin límite' }} · {{ formatChips(g.defaults.startingChips) }} fichas
               </template>

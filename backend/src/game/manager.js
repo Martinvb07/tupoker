@@ -2,7 +2,7 @@
 // IMPORTANTE: el estado vive en memoria, así que pm2 debe correr en modo fork con 1 instancia.
 import { Table, Hand, PlayerHand } from '../models.js';
 import { chipDenominations } from '../../shared/poker.js';
-import { GameError, legalActions, isHandLive, getPlayer } from './engine.js';
+import { GameError, legalActions, isHandLive, getPlayer, modeOf } from './engine.js';
 
 const cache = new Map(); // code -> table (objeto plano)
 const saveChains = new Map();
@@ -33,7 +33,7 @@ function normalize(doc) {
       minBet: t.settings.minBet,
       maxBet: t.settings.maxBet,
       startingChips: t.settings.startingChips,
-      mode: t.settings.mode || 'live',
+      mode: modeOf(t),
       chips: [...(t.settings.chips || [])],
       scan: !!t.settings.scan,
     },
@@ -136,7 +136,7 @@ export function activeTableOf(userId) {
     if (t.status === 'closed') continue;
     const seat = t.seats.find((s) => s.userId === userId);
     if (seat && isOnline(t.code, userId)) {
-      return { code: t.code, name: t.name, mode: t.settings?.mode || 'live', players: t.seats.length, inHand: !!t.hand && t.hand.stage !== 'done' };
+      return { code: t.code, name: t.name, mode: modeOf(t), players: t.seats.length, inHand: !!t.hand && t.hand.stage !== 'done' };
     }
   }
   return null;
@@ -145,7 +145,8 @@ export function activeTableOf(userId) {
 /** Quién gestiona la mesa: el dealer; en modo aleatorio (sin dealer) también el anfitrión. */
 export function canManage(table, userId) {
   if (table.dealerId === userId) return true;
-  return (table.settings?.mode || 'live') === 'random' && table.ownerId === userId;
+  // sin dealer (aleatorio y viuda) gestiona el anfitrión
+  return ['random', 'viuda'].includes(modeOf(table)) && table.ownerId === userId;
 }
 
 // ---------------- Vista por usuario ----------------
@@ -168,7 +169,7 @@ export function viewFor(table, userId) {
     nextHandAt: table.nextHandAt || null,
     me: userId,
     status: table.status,
-    settings: table.settings,
+    settings: { ...table.settings, mode: modeOf(table) },
     chips: table.settings.chips?.length
       ? table.settings.chips
       : chipDenominations(table.settings.minBet, table.settings.maxBet, table.settings.startingChips),
@@ -188,11 +189,16 @@ export function viewFor(table, userId) {
           minRaise: hand.minRaise,
           toAct: hand.toAct,
           turnDeadline: hand.turnDeadline || null,
+          seeDeadline: hand.seeDeadline || null,
           pots: hand.pots,
           result: hand.result,
           handNames: reveal ? hand.handNames || {} : {},
           potTotal: hand.players.reduce((s, p) => s + p.total - p.bet, 0),
           log: hand.log.slice(-30),
+          // la viuda: el centro solo se ve cuando está boca arriba
+          ...(hand.mode === 'viuda'
+            ? { widow: hand.widowOpen || reveal ? hand.widow : [], widowOpen: !!hand.widowOpen, knockBy: hand.knockBy, lastTurns: hand.lastTurns }
+            : {}),
           players: hand.players.map((p) => ({
             userId: p.userId,
             stack: p.stack,
@@ -204,7 +210,12 @@ export function viewFor(table, userId) {
             won: p.won || 0,
             hasCards: p.cards.length === 2,
             // se ven: las tuyas, las de quien llega al showdown y las que alguien decide enseñar
-            cards: p.userId === userId || (reveal && !p.folded) || hand.shown?.includes(p.userId) ? p.cards : [],
+            // en la viuda tus cartas llegan tapadas: no se envían hasta que decides verlas
+            cards:
+              (p.userId === userId && (hand.mode !== 'viuda' || p.seen)) || (reveal && !p.folded) || hand.shown?.includes(p.userId) ? p.cards : [],
+            seen: !!p.seen,
+            took: !!p.took,
+            turns: p.turns || 0,
             shown: !!hand.shown?.includes(p.userId),
             // en vivo: petición para corregir cartas ya registradas ('pending') o permiso concedido ('ok')
             cardsChange: p.changeReq ? 'pending' : p.cardsUnlock ? 'ok' : null,

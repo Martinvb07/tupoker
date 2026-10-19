@@ -8,6 +8,9 @@ import { broadcast } from '../hub.js';
 
 export const TURN_MS = Number(process.env.TURN_MS) || 40_000;
 export const NEXT_HAND_MS = Number(process.env.NEXT_HAND_MS) || 10_000;
+// la viuda: tiempo para ver tus cartas (o llevarte las del centro) antes de que se destapen solas
+export const VIUDA_SEE_MS = Number(process.env.VIUDA_SEE_MS) || 30_000;
+const AUTO = ['random', 'viuda']; // modos sin dealer: turnos con tiempo y manos que salen solas
 // en vivo el dealer pide la siguiente mano y sale tras esta cuenta atrás (le da tiempo a pagar el bote)
 export const LIVE_START_MS = 5_000;
 // tras un all-in el móvil destapa el board calle a calle (~6 s): se suma para que dé tiempo a verlo
@@ -32,6 +35,7 @@ export function schedule(table) {
   if (table.status === 'closed') {
     clearTimeout(t.turn);
     clearTimeout(t.next);
+    clearTimeout(t.see);
     timers.delete(table.code);
     return;
   }
@@ -39,7 +43,7 @@ export function schedule(table) {
   const live = engine.isHandLive(table);
 
   // ---- tiempo de turno
-  if (live && hand.mode === 'random' && hand.toAct && !hand.awaiting) {
+  if (live && AUTO.includes(hand.mode) && hand.toAct && !hand.awaiting) {
     const key = `${hand.no}:${hand.toAct}:${hand.log.length}`;
     if (t.turnKey !== key) {
       clearTimeout(t.turn);
@@ -51,6 +55,25 @@ export function schedule(table) {
     clearTimeout(t.turn);
     t.turnKey = null;
     if (hand) hand.turnDeadline = null;
+  }
+
+  // ---- la viuda: tiempo para ver las cartas; al acabarse se destapan solas y empiezan los cambios
+  if (live && hand.mode === 'viuda' && hand.stage === 'viuda') {
+    const key = `${hand.no}:ver`;
+    if (t.seeKey !== key) {
+      clearTimeout(t.see);
+      t.seeKey = key;
+      hand.seeDeadline = Date.now() + VIUDA_SEE_MS;
+      t.see = setTimeout(() => {
+        if (table.hand?.no !== hand.no) return;
+        engine.viudaRevealAll(table);
+        commit(table);
+      }, VIUDA_SEE_MS);
+    }
+  } else {
+    clearTimeout(t.see);
+    t.seeKey = null;
+    if (hand) hand.seeDeadline = null;
   }
 
   // ---- siguiente mano automática (solo después de la primera)
@@ -79,7 +102,7 @@ export function schedule(table) {
         commit(table);
       }, Math.max(0, table.startAt - Date.now()));
     }
-  } else if (engine.modeOf(table) === 'random' && table.hand && !t.next) {
+  } else if (AUTO.includes(engine.modeOf(table)) && table.hand && !t.next) {
     const ready = engine.eligibleSeats(table).filter((s) => isOnline(table.code, s.userId));
     if (ready.length >= 2) {
       // si la mano acabó en all-in, se suma el tiempo que tarda en destaparse el board

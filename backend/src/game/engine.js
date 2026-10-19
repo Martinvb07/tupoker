@@ -1,7 +1,7 @@
 // Lógica pura de una mano de Texas Hold'em. Tres modos:
 //  - live:    cartas físicas; el dealer introduce el board, los jugadores sus cartas, con fichas.
 //  - random:  la app baraja y reparte cartas y board, con fichas.
-//  - offline: cartas físicas sin dinero; solo board, jugadas, probabilidades y ganador.
+//  - viuda:   sin fichas; la app reparte 5 cartas a cada uno y 5 al centro (ver la sección «La viuda»).
 import { randomInt } from 'node:crypto';
 import { evaluate, isValidCard, FULL_DECK } from '../../shared/poker.js';
 
@@ -10,14 +10,16 @@ const fail = (msg) => { throw new GameError(msg); };
 
 const STAGES = ['preflop', 'flop', 'turn', 'river'];
 const BOARD_SIZE = { flop: 3, turn: 4, river: 5 };
-export const MODES = ['live', 'random', 'offline'];
+export const MODES = ['live', 'random', 'viuda'];
 
 export function blinds(settings) {
   const bb = Math.max(1, Math.floor(settings.minBet));
   return { sb: Math.max(1, Math.floor(bb / 2)), bb };
 }
 
-export const modeOf = (table) => (MODES.includes(table.settings?.mode) ? table.settings.mode : 'live');
+// las mesas antiguas «sin dinero» pasan a jugar a la viuda
+const normMode = (m) => (m === 'offline' ? 'viuda' : m);
+export const modeOf = (table) => (MODES.includes(normMode(table.settings?.mode)) ? normMode(table.settings.mode) : 'live');
 const handMode = (hand) => hand.mode || 'live';
 
 function shuffledDeck() {
@@ -30,7 +32,7 @@ function shuffledDeck() {
 }
 
 const playable = (seat) => seat.status === 'active' && seat.chips > 0;
-const playableIn = (mode) => (mode === 'offline' ? (seat) => seat.status === 'active' : playable);
+const playableIn = (mode) => (mode === 'viuda' ? (seat) => seat.status === 'active' : playable);
 // en vivo el dealer solo reparte: nunca entra en las manos
 const playableAt = (table) => {
   const ok = playableIn(modeOf(table));
@@ -85,7 +87,8 @@ export function startHand(table) {
   const mode = modeOf(table);
   const ok = playableAt(table);
   const seats = table.seats.filter(ok);
-  if (seats.length < 2) fail(mode === 'offline' ? 'Se necesitan al menos 2 jugadores activos' : 'Se necesitan al menos 2 jugadores con fichas');
+  if (seats.length < 2) fail(mode === 'viuda' ? 'Se necesitan al menos 2 jugadores activos' : 'Se necesitan al menos 2 jugadores con fichas');
+  if (mode === 'viuda' && seats.length > VIUDA_MAX) fail(`En la viuda juegan como máximo ${VIUDA_MAX} (no hay cartas para más)`);
 
   const { sb, bb } = blinds(table.settings);
   const prevBtn = table.buttonUserId;
@@ -130,11 +133,7 @@ export function startHand(table) {
   table.status = 'playing';
   table.hand = hand;
 
-  if (mode === 'offline') {
-    // sin apuestas: el dealer pone el flop cuando quiera
-    hand.awaiting = 'flop';
-    return hand;
-  }
+  if (mode === 'viuda') return dealViuda(hand);
   if (mode === 'random') {
     hand.deck = shuffledDeck();
     for (const p of players) p.cards = hand.deck.splice(0, 2);
@@ -183,6 +182,7 @@ function roundComplete(hand) {
 export function legalActions(table, userId) {
   const hand = table.hand;
   if (!hand || hand.toAct !== userId || hand.awaiting || hand.stage === 'showdown' || hand.stage === 'done') return null;
+  if (handMode(hand) === 'viuda') return null;
   const p = getPlayer(hand, userId);
   const toCall = Math.max(0, hand.currentBet - p.bet);
   const maxInc = table.settings.maxBet > 0 ? table.settings.maxBet : Infinity;
@@ -207,7 +207,7 @@ export function legalActions(table, userId) {
 export function act(table, userId, type, amountTo) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done' || hand.stage === 'showdown') fail('No hay ninguna ronda de apuestas activa');
-  if (handMode(hand) === 'offline') fail('En el modo sin dinero no hay apuestas');
+  if (handMode(hand) === 'viuda') fail('En la viuda no hay apuestas');
   if (hand.awaiting) fail('Esperando a que el dealer ponga las cartas');
   if (hand.toAct !== userId) fail('No es tu turno');
   const p = getPlayer(hand, userId);
@@ -311,6 +311,7 @@ export function setBoard(table, cards, { auto = false } = {}) {
   const hand = table.hand;
   if (!hand || !hand.awaiting) fail('No toca poner cartas ahora');
   if (handMode(hand) === 'random' && !auto) fail('En el modo aleatorio las cartas las reparte la app');
+  if (handMode(hand) === 'viuda') fail('En la viuda no hay cartas comunes');
   const stage = hand.awaiting;
   const need = BOARD_SIZE[stage] - hand.board.length;
   if (!Array.isArray(cards) || cards.length !== need) fail(`Debes elegir ${need} carta(s)`);
@@ -325,13 +326,6 @@ export function setBoard(table, cards, { auto = false } = {}) {
   hand.stage = stage;
   hand.awaiting = null;
   log(hand, { type: 'board', cards });
-
-  if (handMode(hand) === 'offline') {
-    hand.toAct = null;
-    if (stage === 'river') goShowdown(table);
-    else hand.awaiting = STAGES[STAGES.indexOf(stage) + 1];
-    return hand;
-  }
 
   const actors = hand.players.filter(canAct);
   if (actors.length >= 2) {
@@ -348,11 +342,10 @@ export function setBoard(table, cards, { auto = false } = {}) {
 export function undoBoard(table) {
   const hand = table.hand;
   if (!hand || hand.stage === 'preflop' || hand.stage === 'done' || hand.stage === 'showdown') fail('No se puede corregir ahora');
-  const offline = handMode(hand) === 'offline';
-  if (handMode(hand) === 'random') fail('En el modo aleatorio no se corrigen cartas');
-  if (hand.awaiting && !offline) fail('No se puede corregir ahora');
+  if (handMode(hand) !== 'live') fail('En este modo no se corrigen cartas');
+  if (hand.awaiting) fail('No se puede corregir ahora');
   const acted = hand.log.length && hand.log[hand.log.length - 1].type !== 'board';
-  if (acted && !offline) fail('Ya hubo acciones en esta calle');
+  if (acted) fail('Ya hubo acciones en esta calle');
   const prev = STAGES[STAGES.indexOf(hand.stage) - 1];
   const keep = prev === 'preflop' ? 0 : BOARD_SIZE[prev];
   hand.board = hand.board.slice(0, keep);
@@ -368,7 +361,7 @@ export function undoBoard(table) {
 export function setHoleCards(table, userId, cards, { free = false } = {}) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done') fail('No hay mano activa');
-  if (handMode(hand) === 'random') fail('En el modo aleatorio la app reparte tus cartas');
+  if (handMode(hand) === 'random' || handMode(hand) === 'viuda') fail('En este modo la app reparte tus cartas');
   const p = getPlayer(hand, userId);
   if (!p) fail('No estás en esta mano');
   if (!Array.isArray(cards) || cards.length > 2) fail('Máximo 2 cartas');
@@ -412,10 +405,7 @@ function goShowdown(table) {
   hand.stage = 'showdown';
   hand.awaiting = null;
   hand.toAct = null;
-  const pots =
-    handMode(hand) === 'offline'
-      ? [{ amount: 0, eligible: hand.players.filter(inHand).map((p) => p.userId) }]
-      : computePots(hand.players);
+  const pots = computePots(hand.players);
   const scores = {};
   if (hand.board.length === 5) {
     for (const p of hand.players.filter(inHand)) {
@@ -493,13 +483,12 @@ function finishHand(table, payout, how) {
   hand.finishedAt = Date.now();
   delete hand.deck;
   log(hand, { type: 'end', payout });
-  // el modo sin dinero no cuenta para los rankings
-  if (handMode(hand) !== 'offline') hand.needsPersist = true;
+  hand.needsPersist = true;
 }
 
 /** ¿Puede este jugador recomprar ahora? (no mientras sigue vivo en una mano) */
 export function checkRebuy(table, userId) {
-  if (modeOf(table) === 'offline') fail('En el modo sin dinero no hay fichas');
+  if (modeOf(table) === 'viuda') fail('En la viuda no hay fichas');
   const seat = table.seats.find((s) => s.userId === userId);
   if (!seat) fail('No estás sentado en la mesa');
   const p = isHandLive(table) ? getPlayer(table.hand, userId) : null;
@@ -576,6 +565,7 @@ export function foldOut(table, userId) {
   if (!isHandLive(table)) return;
   const p = getPlayer(hand, userId);
   if (!p || p.folded) return;
+  if (handMode(hand) === 'viuda') return viudaLeave(table, p);
   if (hand.toAct === userId) return act(table, userId, 'fold');
   p.folded = true;
   p.last = { type: 'fold' };
@@ -596,6 +586,7 @@ export function foldOut(table, userId) {
 export function forceFold(table, userId) {
   const hand = table.hand;
   if (!hand || hand.toAct !== userId) fail('Ese jugador no tiene el turno');
+  if (handMode(hand) === 'viuda') return viudaAct(table, userId, { type: 'pass' });
   const legal = legalActions(table, userId);
   return act(table, userId, legal?.canCheck ? 'check' : 'fold');
 }
@@ -610,4 +601,158 @@ export function cancelHand(table) {
   }
   table.hand = null;
   table.handNo = Math.max(0, (table.handNo || 1) - 1);
+}
+
+// ---------------- La viuda ----------------
+// Sin fichas. La app reparte, una a una, 5 cartas a cada jugador y 5 al centro boca abajo (la viuda).
+//  1. Fase «viuda» (sin turnos): cada uno ve sus cartas o, sin haberlas visto, se lleva las 5 del centro
+//     y su mano vieja queda boca arriba en el centro. Cuando todos han visto sus cartas, empiezan los cambios.
+//  2. Fase «cambios» (por turnos): cambiar 1 carta por 1 del centro, pasar o tocar. Quien se llevó la viuda
+//     no puede tocar en su primer turno. Al tocar, los demás juegan una última vez y gana la mejor mano.
+
+export const VIUDA_MAX = 9; // 5 cartas por cabeza + 5 del centro: con 10 no alcanza la baraja
+
+function dealViuda(hand) {
+  const deck = shuffledDeck();
+  hand.widow = [];
+  for (const p of hand.players) {
+    p.cards = [];
+    p.seen = false;
+  }
+  for (let i = 0; i < 5; i++) {
+    for (const p of hand.players) p.cards.push(deck.pop());
+    hand.widow.push(deck.pop());
+  }
+  hand.stage = 'viuda';
+  hand.widowOpen = false;
+  hand.knockBy = null;
+  hand.lastTurns = null;
+  return hand;
+}
+
+function viudaPlayer(table, userId) {
+  const hand = table.hand;
+  if (!hand || handMode(hand) !== 'viuda' || hand.stage === 'done') fail('No hay ninguna mano de viuda en curso');
+  const p = getPlayer(hand, userId);
+  if (!p || p.folded) fail('No estás en esta mano');
+  return [hand, p];
+}
+
+/** Cuando todos han visto sus cartas, el centro se destapa y empiezan los cambios por turnos. */
+function maybeStartChanges(table) {
+  const hand = table.hand;
+  if (hand.stage !== 'viuda' || hand.players.some((p) => inHand(p) && !p.seen)) return;
+  hand.stage = 'cambios';
+  hand.widowOpen = true;
+  hand.toAct = nextIn(hand.players, hand.buttonId, inHand).userId;
+  log(hand, { type: 'start' });
+}
+
+export function viudaSee(table, userId) {
+  const [hand, p] = viudaPlayer(table, userId);
+  if (p.seen) return;
+  p.seen = true;
+  log(hand, { userId, type: 'see' });
+  maybeStartChanges(table);
+}
+
+/** Sin haber visto tus cartas, te llevas las 5 del centro; tu mano queda boca arriba en el centro. */
+export function viudaTakeWidow(table, userId) {
+  const [hand, p] = viudaPlayer(table, userId);
+  if (p.seen) fail('Ya viste tus cartas: ya no puedes llevarte las del centro');
+  if (hand.stage === 'cambios' && hand.toAct !== userId) fail('No es tu turno');
+  [p.cards, hand.widow] = [hand.widow, p.cards];
+  hand.widowOpen = true;
+  p.seen = true;
+  p.took = true;
+  p.last = { type: 'widow' };
+  log(hand, { userId, type: 'widow' });
+  if (hand.stage === 'cambios') return nextViudaTurn(table, p);
+  maybeStartChanges(table);
+}
+
+/** Se acaba el tiempo de la fase de la viuda: a quien no vio sus cartas se le destapan. */
+export function viudaRevealAll(table) {
+  const hand = table.hand;
+  if (hand?.stage !== 'viuda') return;
+  for (const p of hand.players) if (inHand(p)) p.seen = true;
+  maybeStartChanges(table);
+}
+
+/** Turno de cambios: { type: 'swap', give, take } | { type: 'pass' } | { type: 'knock' }. */
+export function viudaAct(table, userId, { type, give, take } = {}) {
+  const [hand, p] = viudaPlayer(table, userId);
+  if (hand.stage !== 'cambios') fail('Aún no han empezado los cambios');
+  if (hand.toAct !== userId) fail('No es tu turno');
+  if (type === 'swap') {
+    const i = p.cards.indexOf(give);
+    const j = hand.widow.indexOf(take);
+    if (i < 0 || j < 0) fail('Elige una carta tuya y una del centro');
+    p.cards[i] = take;
+    hand.widow[j] = give;
+    p.last = { type: 'swap' };
+  } else if (type === 'pass') {
+    p.last = { type: 'pass' };
+  } else if (type === 'knock') {
+    if (hand.knockBy) fail('Ya tocó otro jugador: es la última vuelta');
+    if (p.took && !p.turns) fail('Te llevaste la viuda: podrás tocar en tu siguiente turno');
+    hand.knockBy = userId;
+    p.last = { type: 'knock' };
+    // los demás juegan una última vez, en orden
+    hand.lastTurns = [];
+    for (let q = nextIn(hand.players, userId, inHand); q && q.userId !== userId; q = nextIn(hand.players, q.userId, inHand)) hand.lastTurns.push(q.userId);
+  } else fail('Jugada no válida');
+  log(hand, { userId, type });
+  nextViudaTurn(table, p);
+}
+
+function nextViudaTurn(table, p) {
+  const hand = table.hand;
+  p.turns = (p.turns || 0) + 1;
+  if (hand.lastTurns) {
+    hand.lastTurns = hand.lastTurns.filter((id) => id !== p.userId && inHand(getPlayer(hand, id)));
+    if (!hand.lastTurns.length) return viudaShowdown(table);
+    hand.toAct = hand.lastTurns[0];
+    return;
+  }
+  hand.toAct = nextIn(hand.players, p.userId, inHand).userId;
+}
+
+function viudaShowdown(table) {
+  const hand = table.hand;
+  const live = hand.players.filter(inHand);
+  const scores = Object.fromEntries(live.map((p) => [p.userId, evaluate(p.cards)]));
+  const best = Math.max(...live.map((p) => scores[p.userId].score));
+  endViuda(table, live.filter((p) => scores[p.userId].score === best).map((p) => p.userId), 'showdown');
+  hand.handNames = Object.fromEntries(live.map((p) => [p.userId, scores[p.userId].name]));
+}
+
+function endViuda(table, winners, how) {
+  const hand = table.hand;
+  hand.result = { how, winners, payout: {} };
+  hand.stage = 'done';
+  hand.toAct = null;
+  hand.finishedAt = Date.now();
+  delete hand.deck;
+  log(hand, { type: 'end', winners });
+}
+
+/** Alguien se va a mitad de mano: si queda uno solo, gana; si era su turno, pasa al siguiente. */
+function viudaLeave(table, p) {
+  const hand = table.hand;
+  const wasTurn = hand.toAct === p.userId;
+  p.folded = true;
+  p.last = { type: 'fold' };
+  log(hand, { userId: p.userId, type: 'fold' });
+  const live = hand.players.filter(inHand);
+  if (live.length < 2) return endViuda(table, live.map((x) => x.userId), 'fold');
+  if (hand.stage === 'viuda') return maybeStartChanges(table);
+  if (hand.lastTurns) hand.lastTurns = hand.lastTurns.filter((id) => id !== p.userId);
+  if (hand.knockBy === p.userId && !hand.lastTurns?.length) return viudaShowdown(table);
+  if (wasTurn) {
+    if (hand.lastTurns) {
+      if (!hand.lastTurns.length) return viudaShowdown(table);
+      hand.toAct = hand.lastTurns[0];
+    } else hand.toAct = nextIn(hand.players, p.userId, inHand).userId;
+  }
 }

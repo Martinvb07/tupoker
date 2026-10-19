@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/lib/api.js';
 import { auth, toast, ask } from '@/lib/store.js';
-import { formatChips, modeInfo } from '@/lib/format.js';
+import { formatChips, modeInfo, noChips } from '@/lib/format.js';
 import Icon from '@/components/Icon.vue';
 import Avatar from '@/components/Avatar.vue';
 import StatTiles from '@/components/StatTiles.vue';
@@ -113,7 +113,7 @@ function join() {
                 <h3 class="ellipsis">{{ t.name }}</h3>
                 <div class="small muted">
                   <Icon :name="modeInfo(t.settings.mode).icon" :size="13" class="inl" /> {{ modeInfo(t.settings.mode).short }}
-                  <template v-if="t.settings.mode !== 'offline'">· Ciegas {{ formatChips(Math.max(1, Math.floor(t.settings.minBet / 2))) }}/{{ formatChips(t.settings.minBet) }}</template>
+                  <template v-if="!noChips(t.settings.mode)">· Ciegas {{ formatChips(Math.max(1, Math.floor(t.settings.minBet / 2))) }}/{{ formatChips(t.settings.minBet) }}</template>
                   · {{ t.players }} jugadores
                 </div>
               </div>

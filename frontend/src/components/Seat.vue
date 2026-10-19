@@ -54,7 +54,7 @@ const won = computed(
   () =>
     props.hand?.stage === 'done' &&
     !!props.player &&
-    (props.player.won > 0 || (props.mode === 'offline' && props.hand.result?.winners?.includes(props.seat.userId))),
+    (props.player.won > 0 || (props.mode === 'viuda' && props.hand.result?.winners?.includes(props.seat.userId))),
 );
 const showCards = computed(() => props.player && !props.player.folded && props.hand && props.hand.stage !== 'done' || (props.player?.cards?.length && props.hand?.stage === 'done'));
 const lastLabel = computed(() => {
@@ -66,7 +66,7 @@ const lastLabel = computed(() => {
 
 <template>
   <div class="seat" :class="{ turn, folded: player?.folded, out: !player && hand && hand.stage !== 'done', me: isMe, won, sitout: seat.status === 'sitout' }">
-    <div class="cards" :class="{ shown: revealedMine || (!isMe && player?.cards?.length === 2) }" v-if="showCards && (!isMe || revealedMine) && !(quiet && player?.cards?.length === 2)">
+    <div class="cards" :class="{ shown: revealedMine || (!isMe && player?.cards?.length === 2) }" v-if="showCards && (!isMe || revealedMine) && !(quiet && player?.cards?.length >= 2)">
       <PlayingCard :card="player.cards?.[0] || ''" size="xs" />
       <PlayingCard :card="player.cards?.[1] || ''" size="xs" />
     </div>
@@ -82,14 +82,14 @@ const lastLabel = computed(() => {
     </div>
     <div class="plate">
       <div class="name ellipsis">{{ isMe ? 'Tú' : seat.displayName }}</div>
-      <div v-if="mode !== 'offline'" class="chips num">{{ formatChips(stack) }}</div>
+      <div v-if="mode !== 'viuda'" class="chips num">{{ formatChips(stack) }}</div>
       <div v-if="turn && secondsLeft" class="tleft num" :class="{ low: secondsLeft <= 10 }">
         <Icon name="timer" :size="11" :stroke="2.6" />{{ secondsLeft }}s
       </div>
     </div>
     <Transition v-if="!quiet" name="pop">
       <div v-if="lastLabel && hand?.stage !== 'done'" :key="lastLabel" class="action" :class="player.last.type">{{ lastLabel }}</div>
-      <div v-else-if="won" class="action win"><Icon v-if="mode === 'offline'" name="trophy" :size="11" /> {{ mode === 'offline' ? 'Gana' : '+' + formatChips(player.won) }}</div>
+      <div v-else-if="won" class="action win"><Icon v-if="mode === 'viuda'" name="trophy" :size="11" /> {{ mode === 'viuda' ? 'Gana' : '+' + formatChips(player.won) }}</div>
       <div v-else-if="player?.shown && hand?.stage === 'done'" class="action shown">Enseña</div>
       <div v-else-if="seat.status === 'sitout'" class="action muted">Fuera</div>
     </Transition>

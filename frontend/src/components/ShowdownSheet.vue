@@ -13,7 +13,6 @@ const emit = defineEmits(['close', 'resolve']);
 const sel = ref([]);
 // siempre montado (el padre solo cambia `open`): así nunca queda una capa huérfana bloqueando la página
 const hand = computed(() => props.state?.hand || { board: [], pots: [], players: [], handNames: {} });
-const offline = computed(() => hand.value.mode === 'offline');
 const live = computed(() => (hand.value.mode || 'live') === 'live');
 watch(
   () => [props.open, hand.value?.pots],
@@ -42,9 +41,8 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
     </div>
     <div v-for="(pot, i) in hand.pots || []" :key="i" class="pot">
       <div class="row-between head">
-        <b v-if="offline">¿Quién gana la mano?</b>
-        <b v-else>{{ hand.pots.length > 1 ? (i === 0 ? 'Bote principal' : `Bote lateral ${i}`) : 'Bote' }}</b>
-        <span v-if="!offline" class="amt num">{{ formatChips(pot.amount) }}</span>
+        <b>{{ hand.pots.length > 1 ? (i === 0 ? 'Bote principal' : `Bote lateral ${i}`) : 'Bote' }}</b>
+        <span class="amt num">{{ formatChips(pot.amount) }}</span>
       </div>
       <p v-if="live && pot.eligible.length > 1 && !pot.complete" class="hint">No todos registraron sus cartas, así que la app no sugiere ganador: mira la mesa y toca a quién gana.</p>
       <p v-else-if="live && pot.eligible.length > 1" class="hint">Mira las cartas en la mesa y toca a quién gana. Si hay empate, marca a varios.</p>
@@ -69,12 +67,12 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
         </div>
         <span class="tick"><Icon name="check" :size="16" /></span>
       </button>
-      <p v-if="sel[i]?.length > 1 && !offline" class="hint">Se repartirá a partes iguales ({{ formatChips(Math.floor(pot.amount / sel[i].length)) }} cada uno).</p>
+      <p v-if="sel[i]?.length > 1" class="hint">Se repartirá a partes iguales ({{ formatChips(Math.floor(pot.amount / sel[i].length)) }} cada uno).</p>
     </div>
     <template #footer>
       <button class="btn btn-success btn-lg btn-block" :disabled="!ready || busy" @click="emit('resolve', sel)">
         <span v-if="busy" class="spinner"></span>
-        <template v-else><Icon name="trophy" :size="18" />{{ offline ? 'Confirmar ganador' : 'Entregar fichas' }}</template>
+        <template v-else><Icon name="trophy" :size="18" />Entregar fichas</template>
       </button>
     </template>
   </Sheet>
