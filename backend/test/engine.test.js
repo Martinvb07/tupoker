@@ -135,17 +135,19 @@ test('la viuda: reparto, ver, llevarse el centro, cambios, tocar y ganador', () 
   assert.ok(h.players.every((p) => p.cards.length === 5 && !p.seen));
   assert.equal(new Set([...h.widow, ...h.players.flatMap((p) => p.cards)]).size, 20);
   assert.throws(() => e.act(t, 'p0', 'check'), /no hay apuestas/);
-  // p1 se lleva el centro sin ver; su mano queda boca arriba en el centro
+  // p1 se lleva el centro sin ver; su mano queda en el centro, tapada hasta que todos vean
   const vieja = [...e.getPlayer(h, 'p1').cards];
   e.viudaTakeWidow(t, 'p1');
   assert.deepEqual(h.widow, vieja);
-  assert.ok(h.widowOpen);
+  assert.equal(h.widowOpen, false);
   // quien ya vio sus cartas no puede llevarse el centro
   e.viudaSee(t, 'p0');
   assert.throws(() => e.viudaTakeWidow(t, 'p0'), /Ya viste/);
   assert.equal(h.stage, 'viuda');
-  e.viudaSee(t, 'p2'); // todos vieron: empiezan los cambios
+  assert.equal(h.widowOpen, false);
+  e.viudaSee(t, 'p2'); // todos vieron: se destapa el centro y empiezan los cambios
   assert.equal(h.stage, 'cambios');
+  assert.ok(h.widowOpen);
   const first = h.toAct;
   assert.throws(() => e.viudaAct(t, first === 'p0' ? 'p2' : 'p0', { type: 'pass' }), /No es tu turno/);
   // quien se llevó la viuda no puede tocar en su primer turno

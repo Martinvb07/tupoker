@@ -70,7 +70,7 @@ const results = computed(() =>
             <button class="btn btn-primary btn-lg grow" :disabled="busy" @click="emit('see')"><Icon name="eye" :size="18" />Ver mis cartas</button>
             <button class="btn btn-lg grow vd-take" :disabled="busy" @click="emit('take')"><Icon name="cards" :size="18" />Llevarme la viuda</button>
           </div>
-          <p class="hint">Si ves tus cartas ya no podrás llevarte las del centro. Si te la llevas, tu mano queda boca arriba en el centro.</p>
+          <p class="hint">Si ves tus cartas ya no podrás llevarte las del centro. Si te la llevas, tu mano queda en el centro y se destapa cuando todos hayan visto las suyas.</p>
         </template>
         <div v-else class="vd-note">
           <Icon name="timer" :size="15" />Esperando a que todos vean sus cartas · {{ seenCount }}/{{ live.length }}

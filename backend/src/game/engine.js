@@ -609,7 +609,8 @@ export function cancelHand(table) {
 // ---------------- La viuda ----------------
 // Sin fichas. La app reparte, una a una, 5 cartas a cada jugador y 5 al centro boca abajo (la viuda).
 //  1. Fase «viuda» (sin turnos): cada uno ve sus cartas o, sin haberlas visto, se lleva las 5 del centro
-//     y su mano vieja queda boca arriba en el centro. Cuando todos han visto sus cartas, empiezan los cambios.
+//     y su mano vieja queda en el centro, tapada. Cuando todos han visto sus cartas, se destapa el centro
+//     y empiezan los cambios.
 //  2. Fase «cambios» (por turnos): cambiar 1 carta por 1 del centro, pasar o tocar. Quien se llevó la viuda
 //     no puede tocar en su primer turno. Al tocar, los demás juegan una última vez y gana la mejor mano.
 //     Si pasan todos seguidos, el centro se descarta y se reparten 5 cartas nuevas del mismo mazo.
@@ -663,13 +664,13 @@ export function viudaSee(table, userId) {
   maybeStartChanges(table);
 }
 
-/** Sin haber visto tus cartas, te llevas las 5 del centro; tu mano queda boca arriba en el centro. */
+/** Sin haber visto tus cartas, te llevas las 5 del centro; tu mano queda en el centro. */
 export function viudaTakeWidow(table, userId) {
   const [hand, p] = viudaPlayer(table, userId);
   if (p.seen) fail('Ya viste tus cartas: ya no puedes llevarte las del centro');
   if (hand.stage === 'cambios' && hand.toAct !== userId) fail('No es tu turno');
+  // el centro (ahora su mano vieja) sigue tapado hasta que todos hayan visto sus cartas o se la hayan llevado
   [p.cards, hand.widow] = [hand.widow, p.cards];
-  hand.widowOpen = true;
   p.seen = true;
   p.took = true;
   p.last = { type: 'widow' };
