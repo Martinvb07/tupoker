@@ -19,7 +19,7 @@ import {
   Undo2, RotateCw, Repeat, Trash2, Menu, Settings, LogOut, Check, X, ChevronLeft, ChevronRight, Camera, Crown,
   Coins, Link, DoorOpen, Play, Pencil, Layers, Pause, ChartLine, KeyRound, Image, Shuffle, Dices, Coffee, Hand,
   TriangleAlert, Ban, Inbox, ScrollText, Medal, Flame, Gem, Beer, Rocket, Star, Zap, Target, Swords, Ghost,
-  Gamepad2, HandCoins, Sparkles, Timer, Eye, EyeOff, PartyPopper, Handshake, Mail, Radio, Wallet, Smile,
+  Gamepad2, HandCoins, Sparkles, Timer, Eye, EyeOff, PartyPopper, Handshake, Mail, Radio, Wallet, Smile, Volume2, VolumeX,
 } from 'lucide-vue-next';
 
 export const ICONS = {
@@ -31,7 +31,7 @@ export const ICONS = {
   dealer: Shuffle, dice: Dices, coffee: Coffee, hand: Hand, alert: TriangleAlert, ban: Ban, inbox: Inbox,
   scroll: ScrollText, medal: Medal, flame: Flame, gem: Gem, beer: Beer, rocket: Rocket, star: Star, zap: Zap,
   target: Target, swords: Swords, ghost: Ghost, gamepad: Gamepad2, 'hand-coins': HandCoins, sparkles: Sparkles,
-  timer: Timer, eye: Eye, eyeOff: EyeOff, party: PartyPopper, handshake: Handshake, mail: Mail, live: Radio, wallet: Wallet, smile: Smile,
+  timer: Timer, eye: Eye, eyeOff: EyeOff, party: PartyPopper, handshake: Handshake, mail: Mail, live: Radio, wallet: Wallet, smile: Smile, volume: Volume2, mute: VolumeX,
 };
 
 // iconos que se pueden elegir para un grupo

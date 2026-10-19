@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue';
 import Chip from './Chip.vue';
 import Icon from './Icon.vue';
 import { formatChips } from '@/lib/format.js';
+import { vibrate } from '@/lib/sfx.js';
 
 const props = defineProps({
   legal: { type: Object, required: true },
@@ -48,9 +49,6 @@ const verdict = computed(() => {
   return { kind: 'raise', label: `${L.isBet ? 'Apostar' : 'Subir a'} ${formatChips(to.value)}`, ok: true };
 });
 
-function vibrate(ms = 10) {
-  if (navigator.vibrate) navigator.vibrate(ms);
-}
 
 function addChip() {
   if (props.busy) return;
@@ -61,7 +59,7 @@ function addChip() {
     // completa hasta el máximo posible con lo que queda
     placed.value.push({ value: room, index: selected.value, id: ++uid });
   } else placed.value.push({ value, index: selected.value, id: ++uid });
-  vibrate();
+  vibrate(10);
 }
 
 const undo = () => placed.value.pop();
@@ -123,7 +121,7 @@ function arcPos(i) {
 }
 function pick(i) {
   selected.value = i;
-  vibrate();
+  vibrate(10);
   setTimeout(() => (expanded.value = false), 120);
 }
 const prevIdx = computed(() => (selected.value - 1 + props.chips.length) % props.chips.length);

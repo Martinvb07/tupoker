@@ -23,6 +23,7 @@ import ChatPanel from '@/components/ChatPanel.vue';
 import ReactButtons from '@/components/ReactButtons.vue';
 import ViudaPanel from '@/components/ViudaPanel.vue';
 import { useTween } from '@/lib/tween.js';
+import { play, soundOn, vibrate } from '@/lib/sfx.js';
 import { scanEnabled, checkScan } from '@/lib/vision.js';
 
 const route = useRoute();
@@ -96,6 +97,7 @@ function revealStep() {
   revealTimer = setTimeout(() => {
     revealTimer = null;
     shown.value = next;
+    play('card');
     revealStep();
   }, delay);
 }
@@ -302,7 +304,7 @@ function onReaction(p) {
 function react(emoji) {
   getSocket().emit('table:react', { code: code.value, emoji });
   showReactions.value = false;
-  navigator.vibrate?.(10);
+  vibrate(10);
 }
 
 // ---------- chat ----------
@@ -359,10 +361,8 @@ async function subscribe() {
 }
 function onState(st) {
   if (st.code !== code.value) return;
-  const wasMyTurn = myTurn.value;
   clockOffset = st.serverNow - Date.now();
   s.value = st;
-  if (st.legal && !wasMyTurn) navigator.vibrate?.([30, 40, 30]);
   if (st.status === 'closed') {
     toast('La mesa se ha cerrado');
     closeOverlays();
@@ -513,6 +513,18 @@ const payouts = computed(() => {
 });
 // cada vez que cambia lo que toca hacer, la barra del dealer entra de nuevo con animación
 const dealerKey = computed(() => (live.value ? `${hand.value.no}-${hand.value.awaiting || hand.value.stage}` : `idle-${!!nextHandIn.value}`));
+// ---------- sonidos: repartir, tu turno, ganar y tocar (viuda) ----------
+watch(() => hand.value?.no, (no, before) => before && no && no !== before && play('deal'));
+watch(() => myTurn.value || viudaTurn.value, (now) => now && play('turn'));
+const iWon = computed(() => {
+  const h = view.value;
+  if (!h || h.stage !== 'done' || revealing.value || !h.result) return false;
+  return (h.result.payout?.[s.value.me] || 0) > 0 || (h.mode === 'viuda' && h.result.winners.includes(s.value.me));
+});
+watch(iWon, (won) => won && play('win'));
+watch(() => hand.value?.knockBy, (by, before) => by && !before && play('knock'));
+watch(() => hand.value?.widowOpen, (open, before) => open && before === false && play('deal'));
+
 const showResult = computed(() => playerOnly.value && payouts.value.length > 0 && !live.value && !revealing.value);
 const myWon = computed(() => payouts.value.find((w) => w.id === s.value?.me)?.amount || 0);
 function startNext() {
@@ -563,6 +575,9 @@ watch(
           <template v-if="!noChips">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
+      <button class="icon-btn" :aria-label="soundOn ? 'Silenciar sonidos' : 'Activar sonidos'" :title="soundOn ? 'Silenciar' : 'Activar sonido'" @click="soundOn = !soundOn">
+        <Icon :name="soundOn ? 'volume' : 'mute'" />
+      </button>
       <button class="codebtn" @click="showShare = true"><Icon name="qr" :size="16" />{{ s.code }}</button>
       <button class="icon-btn" aria-label="Menú" @click="openMenu()"><Icon name="menu" /></button>
     </header>

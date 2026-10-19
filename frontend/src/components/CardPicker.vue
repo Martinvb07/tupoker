@@ -3,6 +3,7 @@
 import { computed, ref, watch } from 'vue';
 import { RANKS, SUITS, SUIT_SYMBOL, SUIT_NAME } from '@shared/poker.js';
 import Sheet from './Sheet.vue';
+import { vibrate } from '@/lib/sfx.js';
 import PlayingCard from './PlayingCard.vue';
 import ScanButton from './ScanButton.vue';
 
@@ -42,7 +43,7 @@ function toggle(rank) {
   if (i >= 0) picked.value.splice(i, 1);
   else if (picked.value.length < props.count) picked.value.push(c);
   else picked.value.splice(picked.value.length - 1, 1, c);
-  if (navigator.vibrate) navigator.vibrate(8);
+  vibrate(8);
 }
 const remove = (i) => picked.value.splice(i, 1);
 const full = computed(() => picked.value.length === props.count);
