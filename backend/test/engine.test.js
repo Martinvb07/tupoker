@@ -27,6 +27,9 @@ test('equity de AA contra una mano aleatoria ronda el 85%', () => {
 test('fichas salen de la mínima y la máxima', () => {
   assert.deepEqual(chipDenominations(100, 0, 5000), [100, 500, 1000, 2500, 5000]);
   assert.ok(chipDenominations(5000, 100000).every((v) => v >= 5000));
+  // con máxima ninguna ficha la supera y la máxima es una ficha
+  assert.deepEqual(chipDenominations(1000, 2000, 20000), [1000, 2000]);
+  assert.deepEqual(chipDenominations(100, 1000), [100, 500, 1000]);
 });
 
 test('mano completa a 3 con showdown', () => {
@@ -200,4 +203,80 @@ test('al terminar la mano un jugador puede enseñar sus cartas', () => {
   const winner = t.hand.players.find((p) => !p.folded).userId;
   e.showCards(t, winner);
   assert.deepEqual(t.hand.shown, [winner]);
+});
+
+test('bote lateral: quien va all-in con 7K en el flop solo gana lo que pudo cubrir', () => {
+  // p0 tiene 8K; p1 y p2, 20K. Ciegas 500/1000
+  const t = {
+    status: 'waiting', settings: { mode: 'live', minBet: 1000, maxBet: 0, startingChips: 20000 }, handNo: 0, buttonUserId: null,
+    seats: [{ userId: 'p0', chips: 8000, status: 'active' }, { userId: 'p1', chips: 20000, status: 'active' }, { userId: 'p2', chips: 20000, status: 'active' }],
+  };
+  e.startHand(t);
+  const calle = (fn) => { for (let i = 0; i < 20 && !t.hand.awaiting && t.hand.stage !== 'showdown'; i++) fn(t.hand.toAct); };
+  calle((id) => e.act(t, id, e.legalActions(t, id).canCheck ? 'check' : 'call')); // preflop: todos 1K
+  e.setBoard(t, ['As', 'Kd', '7c']);
+  // flop: p0 se mete all-in con sus 7K y los demás pagan
+  calle((id) => e.act(t, id, id === 'p0' ? 'allin' : e.legalActions(t, id).canCheck ? 'check' : 'call'));
+  e.setBoard(t, ['2h']);
+  // turn: p1 y p2 siguen apostando entre ellos (5K)
+  calle((id) => (t.hand.currentBet === 0 ? e.act(t, id, 'raise', 5000) : e.act(t, id, 'call')));
+  e.setBoard(t, ['9s']);
+  calle((id) => e.act(t, id, 'check'));
+  assert.equal(t.hand.stage, 'showdown');
+  assert.deepEqual(t.hand.pots.map((p) => p.amount), [24000, 10000]);
+  assert.deepEqual(t.hand.pots[1].eligible.sort(), ['p1', 'p2']);
+  // gana p0: se lleva el bote principal (24K); el lateral (10K) es de p1
+  e.resolveShowdown(t, [['p0'], ['p1']]);
+  assert.deepEqual(t.hand.result.payout, { p0: 24000, p1: 10000 });
+  assert.equal(t.seats.find((s) => s.userId === 'p0').chips, 24000);
+  assert.equal(total(t), 48000);
+});
+
+test('en vivo: si alguien no registró sus cartas la app no sugiere ganador', () => {
+  const t = mesa(3);
+  t.settings.mode = 'live';
+  e.startHand(t);
+  e.setHoleCards(t, 'p0', ['Ah', 'Ad']);
+  e.setHoleCards(t, 'p1', ['2c', '3d']);
+  const calle = () => { for (let i = 0; i < 10 && !t.hand.awaiting && t.hand.stage !== 'showdown'; i++) e.act(t, t.hand.toAct, e.legalActions(t, t.hand.toAct).canCheck ? 'check' : 'call'); };
+  calle(); e.setBoard(t, ['As', 'Kd', '7c']);
+  calle(); e.setBoard(t, ['2h']);
+  calle(); e.setBoard(t, ['9s']);
+  calle();
+  assert.equal(t.hand.stage, 'showdown');
+  assert.deepEqual(t.hand.pots[0].suggested, []);
+  assert.equal(t.hand.pots[0].complete, false);
+  // el dealer decide y reparte
+  e.resolveShowdown(t, [['p2']]);
+  assert.equal(t.hand.result.payout.p2, 60);
+});
+
+test('en vivo: las cartas registradas solo se cambian con permiso del dealer', () => {
+  const t = mesa(3);
+  t.settings.mode = 'live';
+  e.startHand(t);
+  e.setHoleCards(t, 'p0', ['Ah', 'Ad']);
+  assert.throws(() => e.setHoleCards(t, 'p0', ['Kh', 'Kd']), /permiso al dealer/);
+  e.getPlayer(t.hand, 'p0').cardsUnlock = true; // el dealer acepta
+  e.setHoleCards(t, 'p0', ['Kh', 'Kd']);
+  assert.deepEqual(e.getPlayer(t.hand, 'p0').cards, ['Kh', 'Kd']);
+  // el permiso vale para un solo cambio
+  assert.throws(() => e.setHoleCards(t, 'p0', ['Qh', 'Qd']), /permiso al dealer/);
+  // el dealer puede corregir las suyas
+  e.setHoleCards(t, 'p1', ['2c', '3c']);
+  e.setHoleCards(t, 'p1', ['4c', '5c'], { free: true });
+});
+
+test('en vivo el dealer no juega aunque tenga asiento y fichas', () => {
+  const t = mesa(3);
+  t.settings.mode = 'live';
+  t.dealerId = 'p0';
+  e.startHand(t);
+  assert.deepEqual(t.hand.players.map((p) => p.userId).sort(), ['p1', 'p2']);
+  assert.equal(e.eligibleSeats(t).length, 2);
+  // con un solo jugador además del dealer no hay mano
+  const u = mesa(2);
+  u.settings.mode = 'live';
+  u.dealerId = 'p0';
+  assert.throws(() => e.startHand(u), /al menos 2/);
 });

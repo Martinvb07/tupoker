@@ -260,6 +260,11 @@ const CHIP_MULTIPLIERS = [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 100
 
 /** Denominaciones de fichas a partir de la apuesta mínima y máxima que define el dealer. */
 export function chipDenominations(minBet, maxBet = 0, cap = 0) {
+  // con máxima, ninguna ficha la pasa (si no, tocarla pondría siempre la máxima) y la máxima es una ficha más
+  if (maxBet > 0) {
+    const out = CHIP_MULTIPLIERS.map((m) => minBet * m).filter((v) => v < maxBet).slice(0, 7);
+    return [...out, Math.max(minBet, maxBet)];
+  }
   const limit = maxBet > 0 ? maxBet : cap > 0 ? cap : minBet * 1000;
   const out = [];
   for (const m of CHIP_MULTIPLIERS) {

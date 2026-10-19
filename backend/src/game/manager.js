@@ -206,6 +206,8 @@ export function viewFor(table, userId) {
             // se ven: las tuyas, las de quien llega al showdown y las que alguien decide enseñar
             cards: p.userId === userId || (reveal && !p.folded) || hand.shown?.includes(p.userId) ? p.cards : [],
             shown: !!hand.shown?.includes(p.userId),
+            // en vivo: petición para corregir cartas ya registradas ('pending') o permiso concedido ('ok')
+            cardsChange: p.changeReq ? 'pending' : p.cardsUnlock ? 'ok' : null,
           })),
         }
       : null,

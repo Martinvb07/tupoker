@@ -62,6 +62,8 @@ export async function createTable({ owner, name, settings, groupId = null, deale
   const code = await uniqueTableCode();
   const dealer = dealerId || owner._id.toString();
   const ownerIsDealer = dealer === owner._id.toString();
+  // en vivo el dealer no juega: su asiento queda fuera de las manos
+  if (settings.mode === 'live') dealerPlays = false;
   const doc = await Table.create({
     code,
     name: name || 'Mesa de ' + (owner.displayName || owner.username),

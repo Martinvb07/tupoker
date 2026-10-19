@@ -46,7 +46,8 @@ const ready = computed(() => sel.value.length && sel.value.every((a) => a.length
         <b v-else>{{ hand.pots.length > 1 ? (i === 0 ? 'Bote principal' : `Bote lateral ${i}`) : 'Bote' }}</b>
         <span v-if="!offline" class="amt num">{{ formatChips(pot.amount) }}</span>
       </div>
-      <p v-if="live && pot.eligible.length > 1" class="hint">Mira las cartas en la mesa y toca a quién gana. Si hay empate, marca a varios.</p>
+      <p v-if="live && pot.eligible.length > 1 && !pot.complete" class="hint">No todos registraron sus cartas, así que la app no sugiere ganador: mira la mesa y toca a quién gana.</p>
+      <p v-else-if="live && pot.eligible.length > 1" class="hint">Mira las cartas en la mesa y toca a quién gana. Si hay empate, marca a varios.</p>
       <p v-else-if="!pot.complete && pot.eligible.length > 1" class="hint">Algunos jugadores no registraron sus cartas: elige el ganador viendo la mesa.</p>
       <button
         v-for="id in pot.eligible"

@@ -31,7 +31,7 @@ async function create() {
       <div>
         <div class="eyebrow">Nueva mesa</div>
         <h1>Prepara la partida</h1>
-        <p>Tú serás el dealer: eliges el modo, la mínima, la máxima y las fichas. Luego podrás pasar el rol a otro.</p>
+        <p>Tú serás el dealer: eliges el modo, la mínima, la máxima y las fichas.{{ settings.mode === 'live' ? ' En vivo lo eres siempre y no juegas: repartes, pones las cartas, decides quién gana y validas las recompras; los demás apuestan desde el móvil.' : ' Luego podrás pasar el rol a otro.' }}</p>
       </div>
     </div>
 
@@ -41,7 +41,8 @@ async function create() {
         <input v-model="name" class="input" maxlength="40" placeholder="Viernes de póker" />
       </label>
       <SettingsForm v-model="settings" />
-      <label class="toggle">
+      <!-- en vivo el dealer no juega: solo reparte -->
+      <label v-if="settings.mode !== 'live'" class="toggle">
         <div>
           <b>Yo también juego</b>
           <div class="small muted">Si lo desactivas, solo repartes y pones las cartas.</div>

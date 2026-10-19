@@ -188,7 +188,8 @@ r.post('/:id/open-table', ah(async (req, res) => {
     if (t && t.status !== 'closed') return res.json({ code: t.code });
   }
   const settings = cleanSettings(req.body.settings || {}, g.defaults);
-  const dealerId = g.defaultDealerId && g.members.some((m) => m.userId.equals(g.defaultDealerId)) ? g.defaultDealerId.toString() : req.userId;
+  // en vivo el dealer es siempre quien abre la mesa
+  const dealerId = settings.mode !== 'live' && g.defaultDealerId && g.members.some((m) => m.userId.equals(g.defaultDealerId)) ? g.defaultDealerId.toString() : req.userId;
   const t = await createTable({ owner: req.user, name: g.name, settings, groupId: g._id, dealerId, dealerPlays: req.body.dealerPlays !== false });
   if (dealerId !== req.userId) {
     const dealer = await User.findById(dealerId);

@@ -17,6 +17,7 @@ const props = defineProps({
   mode: { type: String, default: 'live' },
   secondsLeft: { type: Number, default: 0 }, // tiempo de turno (modo aleatorio)
   betReach: { type: Number, default: 1 },
+  quiet: Boolean, // sin etiquetas bajo el asiento (en móvil, cuando el resultado ya sale encima de la mesa)
   reaction: { type: Object, default: null }, // { emoji, id }: emoji enviado por este jugador // distancia de la ficha de apuesta al asiento
 });
 
@@ -86,7 +87,7 @@ const lastLabel = computed(() => {
         <Icon name="timer" :size="11" :stroke="2.6" />{{ secondsLeft }}s
       </div>
     </div>
-    <Transition name="pop">
+    <Transition v-if="!quiet" name="pop">
       <div v-if="lastLabel && hand?.stage !== 'done'" :key="lastLabel" class="action" :class="player.last.type">{{ lastLabel }}</div>
       <div v-else-if="won" class="action win"><Icon v-if="mode === 'offline'" name="trophy" :size="11" /> {{ mode === 'offline' ? 'Gana' : '+' + formatChips(player.won) }}</div>
       <div v-else-if="player?.shown && hand?.stage === 'done'" class="action shown">Enseña</div>

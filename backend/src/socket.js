@@ -4,7 +4,7 @@ import { COOKIE, userFromToken } from './auth.js';
 import { User } from './models.js';
 import { getTable, markOnline, viewFor, canManage, GameError } from './game/manager.js';
 import * as engine from './game/engine.js';
-import { commit, schedule } from './game/autopilot.js';
+import { commit, schedule, LIVE_START_MS } from './game/autopilot.js';
 import * as chat from './game/chat.js';
 import { setIO, broadcast, roomOf, notifyUser, markUserOnline } from './hub.js';
 import { cleanSettings, seatFor, closeTableNow } from './routes/tables.js';
@@ -34,7 +34,7 @@ export function initSocket(httpServer) {
     // Ejecuta una operación sobre la mesa, guarda y emite el nuevo estado.
     // manage: solo quien gestiona la mesa (dealer; en modo aleatorio, el anfitrión).
     // acciones de juego bloqueadas mientras una recompra en vivo tiene la partida en pausa
-    const PAUSABLE = new Set(['table:action', 'dealer:start', 'dealer:board', 'dealer:resolve', 'dealer:forceFold']);
+    const PAUSABLE = new Set(['table:action', 'dealer:start', 'dealer:startIn', 'dealer:board', 'dealer:resolve', 'dealer:forceFold']);
     const handle = (event, fn, { manage = false } = {}) => {
       socket.on(event, async (payload = {}, ack = () => {}) => {
         try {
@@ -146,12 +146,31 @@ export function initSocket(httpServer) {
       const seat = mySeat(t);
       if (seat) seat.timeouts = 0;
     });
-    handle('table:cards', (t, { cards }) => engine.setHoleCards(t, uid, cards));
+    handle('table:cards', (t, { cards }) => engine.setHoleCards(t, uid, cards, { free: canManage(t, uid) }));
+    // En vivo: quien se equivocó al registrar sus cartas pide al dealer permiso para cambiarlas
+    handle('table:cardsChange', (t) => {
+      const p = engine.isHandLive(t) ? engine.getPlayer(t.hand, uid) : null;
+      if (!p || p.folded) throw new GameError('No estás en esta mano');
+      if (p.cards.length !== 2) throw new GameError('Aún no has registrado tus cartas');
+      if (p.changeReq || p.cardsUnlock) return false;
+      p.changeReq = true;
+      notifyUser(t.dealerId, 'table:notice', { message: `${mySeat(t)?.displayName || 'Un jugador'} pide cambiar sus cartas` });
+    });
+    handle('dealer:cardsChange', (t, { userId, approve }) => {
+      const p = engine.isHandLive(t) ? engine.getPlayer(t.hand, userId) : null;
+      if (!p?.changeReq) throw new GameError('Esa petición ya no está pendiente');
+      delete p.changeReq;
+      if (approve) p.cardsUnlock = true;
+      notifyUser(userId, 'table:notice', approve
+        ? { message: 'El dealer te deja cambiar tus cartas', type: 'success' }
+        : { message: 'El dealer no aceptó el cambio de cartas', type: 'error' });
+    }, { manage: true });
     handle('table:show', (t) => engine.showCards(t, uid));
 
     handle('table:sitout', (t, { sitout }) => {
       const seat = mySeat(t);
       if (!seat) throw new GameError('No estás sentado');
+      if (!sitout && engine.modeOf(t) === 'live' && t.dealerId === uid) throw new GameError('En vivo el dealer no juega, solo reparte');
       seat.status = sitout ? 'sitout' : 'active';
       seat.timeouts = 0;
       if (sitout) engine.foldOut(t, uid);
@@ -185,6 +204,7 @@ export function initSocket(httpServer) {
     //  - aleatorio: la tienen que aceptar todos los demás jugadores de la mesa
     //  - en vivo: la aprueba el dealer
     handle('table:rebuy', (t, { amount }) => {
+      if (engine.modeOf(t) === 'live' && t.dealerId === uid) throw new GameError('En vivo el dealer no juega, solo reparte');
       const seat = engine.checkRebuy(t, uid);
       if (seat.rebuyRequest) throw new GameError('Ya tienes una recompra pendiente');
       const amt = Math.floor(Number(amount) || t.settings.startingChips);
@@ -231,6 +251,16 @@ export function initSocket(httpServer) {
       if (!canManage(t, uid) && !(engine.modeOf(t) === 'random' && mySeat(t))) throw new GameError('Solo el dealer puede repartir');
       engine.startHand(t);
     });
+    // En vivo: la siguiente mano sale tras una cuenta atrás, para que el dealer pague antes el bote
+    handle('dealer:startIn', (t) => {
+      if (engine.modeOf(t) !== 'live') throw new GameError('Solo en el modo en vivo');
+      if (engine.isHandLive(t)) throw new GameError('Ya hay una mano en curso');
+      if (engine.eligibleSeats(t).length < 2) throw new GameError('Se necesitan al menos 2 jugadores con fichas');
+      if (!t.startAt) t.startAt = Date.now() + LIVE_START_MS;
+    }, { manage: true });
+    handle('dealer:cancelStart', (t) => {
+      t.startAt = null;
+    }, { manage: true });
     handle('dealer:board', (t, { cards }) => engine.setBoard(t, cards), { manage: true });
     handle('dealer:undoBoard', (t) => engine.undoBoard(t), { manage: true });
     handle('dealer:resolve', (t, { winners }) => engine.resolveShowdown(t, winners), { manage: true });
@@ -259,6 +289,8 @@ export function initSocket(httpServer) {
     handle('dealer:settings', (t, { settings, name }) => {
       if (engine.isHandLive(t)) throw new GameError('Cambia la configuración entre manos');
       t.settings = cleanSettings(settings, t.settings);
+      // al pasar a en vivo, el dealer vuelve a ser el creador de la mesa
+      if (engine.modeOf(t) === 'live' && t.seats.some((s) => s.userId === t.ownerId)) t.dealerId = t.ownerId;
       if (name) t.name = String(name).trim().slice(0, 40) || t.name;
     }, { manage: true });
 
@@ -292,8 +324,9 @@ export function initSocket(httpServer) {
       if (seat.status === 'sitout') engine.foldOut(t, userId);
     }, { manage: true });
 
-    // El dealer actual o el creador de la mesa asignan el rol de dealer
+    // El dealer actual o el creador de la mesa asignan el rol de dealer (en vivo no: siempre es el creador)
     handle('table:setDealer', (t, { userId }) => {
+      if (engine.modeOf(t) === 'live') throw new GameError('En vivo el dealer es siempre quien creó la mesa');
       if (t.dealerId !== uid && t.ownerId !== uid) throw new GameError('Solo el dealer o el creador pueden asignar el dealer');
       if (!t.seats.some((s) => s.userId === userId)) throw new GameError('Ese jugador no está en la mesa');
       t.dealerId = userId;

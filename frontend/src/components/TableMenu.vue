@@ -45,7 +45,9 @@ async function newGame() {
 }
 
 const isRandom = computed(() => (props.state.settings.mode || 'live') === 'random');
-const canAssignDealer = computed(() => !isRandom.value && (props.state.isDealer || props.state.isOwner));
+const isLive = computed(() => (props.state.settings.mode || 'live') === 'live');
+// en vivo el dealer es siempre quien creó la mesa: no se puede pasar el rol
+const canAssignDealer = computed(() => !isRandom.value && !isLive.value && (props.state.isDealer || props.state.isOwner));
 const live = computed(() => props.state.hand && props.state.hand.stage !== 'done');
 const mySeat = computed(() => props.state.seats.find((s) => s.userId === props.state.me));
 
@@ -83,10 +85,11 @@ async function closeTable() {
               <div class="row nm">
                 <span class="ellipsis">{{ s.displayName }}</span>
                 <span v-if="s.userId === state.dealerId && !isRandom" class="badge badge-gold"><Icon name="dealer" :size="12" />Dealer</span>
-                <span v-if="s.status === 'sitout'" class="badge">Fuera</span>
+                <span v-if="s.status === 'sitout' && !(isLive && s.userId === state.dealerId)" class="badge">Fuera</span>
                 <span v-if="!s.online" class="badge">Offline</span>
               </div>
-              <div class="small muted num">
+              <div v-if="isLive && s.userId === state.dealerId" class="small muted">Reparte y valida · no juega</div>
+              <div v-else class="small muted num">
                 {{ formatChips(s.chips) }} fichas ·
                 <span :class="s.chips - s.buyIn >= 0 ? 'pos' : 'neg'">{{ formatSigned(s.chips - s.buyIn, formatChips) }}</span>
               </div>
@@ -113,7 +116,7 @@ async function closeTable() {
             </div>
           </Transition>
         </div>
-        <p class="hint">{{ isRandom ? "En modo aleatorio no hay dealer: la app reparte y las manos salen solas. El anfitrión gestiona fichas y ajustes." : "El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol." }}</p>
+        <p class="hint">{{ isRandom ? "En modo aleatorio no hay dealer: la app reparte y las manos salen solas. El anfitrión gestiona fichas y ajustes." : isLive ? "En vivo el dealer es siempre quien creó la mesa: reparte, pone las cartas, decide los ganadores y valida las recompras." : "El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol." }}</p>
       </div>
 
       <div v-else-if="tab === 'settings'" key="s" class="stack">
@@ -130,7 +133,7 @@ async function closeTable() {
       </div>
 
       <div v-else key="m" class="stack">
-        <div v-if="mySeat" class="card mystats">
+        <div v-if="mySeat && !(isLive && state.isDealer)" class="card mystats">
           <div class="row-between"><span class="muted">Mis fichas</span><b class="num">{{ formatChips(mySeat.chips) }}</b></div>
           <div class="row-between"><span class="muted">Recompras / entrada</span><b class="num">{{ formatChips(mySeat.buyIn) }}</b></div>
           <div class="row-between">
@@ -143,7 +146,7 @@ async function closeTable() {
           <Icon name="coins" :size="18" />{{ mySeat.rebuyRequest ? 'Recompra pedida, esperando al dealer…' : rebuyLabel }}
         </button>
         <button v-if="mySeat?.rebuyRequest" class="btn btn-ghost btn-block" @click="run('table:cancelRebuy')">Cancelar petición</button>
-        <button v-if="mySeat" class="btn btn-block" @click="run('table:sitout', { sitout: mySeat.status !== 'sitout' })">
+        <button v-if="mySeat && !(isLive && state.isDealer)" class="btn btn-block" @click="run('table:sitout', { sitout: mySeat.status !== 'sitout' })">
           <Icon :name="mySeat.status === 'sitout' ? 'play' : 'pause'" :size="18" />
           {{ mySeat.status === 'sitout' ? 'Volver a jugar' : 'Ausentarme (no jugar las próximas manos)' }}
         </button>

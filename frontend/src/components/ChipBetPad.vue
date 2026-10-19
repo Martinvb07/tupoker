@@ -12,6 +12,7 @@ const props = defineProps({
   pot: { type: Number, default: 0 },
   busy: Boolean,
   compact: Boolean, // móvil: todo más pequeño para que quepa sin deslizar
+  large: Boolean, // en vivo, jugador: el panel ocupa la pantalla, todo más grande
 });
 const emit = defineEmits(['action']);
 
@@ -128,11 +129,13 @@ function pick(i) {
 const prevIdx = computed(() => (selected.value - 1 + props.chips.length) % props.chips.length);
 const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
 const visibleStack = computed(() => placed.value.slice(-8));
-const sz = computed(() => (props.compact ? { pile: 50, mini: 40, main: 54 } : { pile: 64, mini: 50, main: 66 }));
+const sz = computed(() =>
+  props.large ? { pile: 76, mini: 56, main: 78 } : props.compact ? { pile: 50, mini: 40, main: 54 } : { pile: 64, mini: 50, main: 66 },
+);
 </script>
 
 <template>
-  <div class="pad" :class="{ compact }">
+  <div class="pad" :class="{ compact, large }">
     <!-- presets -->
     <div class="presets">
       <button v-for="p in presets" :key="p.label" class="preset" @click="setAmount(p.amount)">{{ p.label }}</button>
@@ -183,20 +186,16 @@ const sz = computed(() => (props.compact ? { pile: 50, mini: 40, main: 54 } : { 
     <!-- acciones -->
     <div class="actions">
       <button class="act fold" :disabled="busy" @click="emit('action', { type: 'fold' })">Retirarse</button>
-      <button
-        v-if="legal.canCheck"
-        class="act check"
-        :disabled="busy"
-        @click="emit('action', { type: 'check' })"
-      >
-        Pasar
-      </button>
-      <button v-else class="act call" :disabled="busy" @click="emit('action', { type: 'call' })">
-        Igualar <span class="num">{{ formatChips(toCall) }}</span>
-      </button>
-      <button class="act go" :class="{ ok: verdict.ok && pending > 0 }" :disabled="!verdict.ok || !pending || busy" @click="confirm">
+      <!-- en grande, al apilar fichas el botón de Pasar / Igualar se convierte en el de apostar -->
+      <template v-if="!(large && pending > 0)">
+        <button v-if="legal.canCheck" class="act check" :disabled="busy" @click="emit('action', { type: 'check' })">Pasar</button>
+        <button v-else class="act call" :disabled="busy" @click="emit('action', { type: 'call' })">
+          Igualar <span class="num">{{ formatChips(toCall) }}</span>
+        </button>
+      </template>
+      <button v-if="!large || pending > 0" class="act go" :class="{ ok: verdict.ok && pending > 0 }" :disabled="!verdict.ok || !pending || busy" @click="confirm">
         <span v-if="busy" class="spinner"></span>
-        <span v-else>{{ verdict.label }}</span>
+        <span v-else>{{ pending ? verdict.label : 'Apila fichas' }}</span>
       </button>
     </div>
 
@@ -321,6 +320,23 @@ const sz = computed(() => (props.compact ? { pile: 50, mini: 40, main: 54 } : { 
   .pad { gap: 8px; }
   .act { height: 48px; }
 }
+
+/* grande (en vivo, jugador): sin mesa, el panel llena la pantalla */
+.pad.large { gap: 12px; }
+.large .presets { gap: 8px; }
+.large .preset { height: 40px; padding: 0 12px; font-size: 14.5px; }
+.large .presets { flex-wrap: nowrap; gap: 6px; }
+.large .circle { width: 156px; height: 156px; box-shadow: 0 0 0 9px #0d1330, 0 0 0 10px rgba(255, 255, 255, 0.06), 0 24px 50px -16px rgba(0, 0, 0, 0.8); }
+.large .ring { inset: 8px; border-width: 6px; }
+.large .tap { font-size: 14px; }
+.large .amount { font-size: 20px; padding: 5px 18px; }
+.large .controls { max-width: none; }
+.large .selector { width: 150px; height: 84px; }
+.large .sq { width: 52px; height: 52px; border-radius: 16px; }
+.large .actions { max-width: none; gap: 10px; grid-template-columns: 1fr 1fr; }
+.large .act { height: 54px; font-size: 17px; border-radius: 18px; }
+.large .act.go { font-size: 16px; }
+.large .act.go.ok { font-size: 17px; }
 
 /* compacto (móvil): círculo y selector en la misma fila, botones a los lados */
 .pad.compact {

@@ -31,10 +31,15 @@ function shuffledDeck() {
 
 const playable = (seat) => seat.status === 'active' && seat.chips > 0;
 const playableIn = (mode) => (mode === 'offline' ? (seat) => seat.status === 'active' : playable);
+// en vivo el dealer solo reparte: nunca entra en las manos
+const playableAt = (table) => {
+  const ok = playableIn(modeOf(table));
+  return modeOf(table) === 'live' ? (seat) => ok(seat) && seat.userId !== table.dealerId : ok;
+};
 
 /** Jugadores que pueden entrar en la siguiente mano. */
 export function eligibleSeats(table) {
-  return table.seats.filter(playableIn(modeOf(table)));
+  return table.seats.filter(playableAt(table));
 }
 
 function nextIn(list, fromId, pred = () => true) {
@@ -78,7 +83,7 @@ export function startHand(table) {
   if (table.status === 'closed') fail('La mesa está cerrada');
   if (isHandLive(table)) fail('Ya hay una mano en curso');
   const mode = modeOf(table);
-  const ok = playableIn(mode);
+  const ok = playableAt(table);
   const seats = table.seats.filter(ok);
   if (seats.length < 2) fail(mode === 'offline' ? 'Se necesitan al menos 2 jugadores activos' : 'Se necesitan al menos 2 jugadores con fichas');
 
@@ -360,7 +365,7 @@ export function undoBoard(table) {
 
 // ---------------- Cartas propias ----------------
 
-export function setHoleCards(table, userId, cards) {
+export function setHoleCards(table, userId, cards, { free = false } = {}) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done') fail('No hay mano activa');
   if (handMode(hand) === 'random') fail('En el modo aleatorio la app reparte tus cartas');
@@ -371,6 +376,12 @@ export function setHoleCards(table, userId, cards) {
   if (cards.length === 2 && cards[0] === cards[1]) fail('Cartas repetidas');
   const taken = new Set([...hand.board, ...hand.players.filter((o) => o !== p).flatMap((o) => o.cards)]);
   for (const c of cards) if (taken.has(c)) fail('Esa carta no está disponible');
+  // en vivo, una vez registradas solo se cambian con permiso del dealer (si no, sería trampa)
+  if (handMode(hand) === 'live' && p.cards.length === 2 && !free) {
+    if (!p.cardsUnlock) fail('Para cambiar tus cartas pide permiso al dealer');
+    delete p.cardsUnlock;
+  }
+  delete p.changeReq;
   p.cards = cards;
 }
 
@@ -418,7 +429,8 @@ function goShowdown(table) {
     const known = pot.eligible.filter((id) => scores[id]);
     let suggested = [];
     if (pot.eligible.length === 1) suggested = [...pot.eligible];
-    else if (known.length) {
+    // en vivo, si alguien no registró sus cartas la app no puede saber quién gana: decide el dealer
+    else if (known.length && (handMode(hand) !== 'live' || known.length === pot.eligible.length)) {
       const best = Math.max(...known.map((id) => scores[id].score));
       suggested = known.filter((id) => scores[id].score === best);
     }

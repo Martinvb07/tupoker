@@ -8,6 +8,8 @@ import { broadcast } from '../hub.js';
 
 export const TURN_MS = Number(process.env.TURN_MS) || 40_000;
 export const NEXT_HAND_MS = Number(process.env.NEXT_HAND_MS) || 10_000;
+// en vivo el dealer pide la siguiente mano y sale tras esta cuenta atrás (le da tiempo a pagar el bote)
+export const LIVE_START_MS = 5_000;
 // tras un all-in el móvil destapa el board calle a calle (~6 s): se suma para que dé tiempo a verlo
 const RUNOUT_EXTRA_MS = 6_000;
 const MAX_TIMEOUTS = 2; // turnos agotados seguidos antes de sentarle fuera
@@ -56,6 +58,27 @@ export function schedule(table) {
     clearTimeout(t.next);
     t.next = null;
     table.nextHandAt = null;
+    table.startAt = null;
+  } else if (engine.modeOf(table) === 'live') {
+    // cuenta atrás que pide el dealer; sin ella (o cancelada) no se reparte
+    if (!table.startAt) {
+      clearTimeout(t.next);
+      t.next = null;
+      table.nextHandAt = null;
+    } else if (!t.next) {
+      table.nextHandAt = table.startAt;
+      t.next = setTimeout(() => {
+        t.next = null;
+        table.nextHandAt = null;
+        table.startAt = null;
+        try {
+          if (!engine.isHandLive(table) && table.status !== 'closed' && !engine.pausedBy(table)) engine.startHand(table);
+        } catch {
+          /* ya no hay jugadores suficientes: el dealer vuelve a pedirla */
+        }
+        commit(table);
+      }, Math.max(0, table.startAt - Date.now()));
+    }
   } else if (engine.modeOf(table) === 'random' && table.hand && !t.next) {
     const ready = engine.eligibleSeats(table).filter((s) => isOnline(table.code, s.userId));
     if (ready.length >= 2) {
