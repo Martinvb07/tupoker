@@ -209,6 +209,12 @@ const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
 .compact .selector .mini { top: 10px; }
 .compact .sq { width: 42px; height: 42px; border-radius: 13px; }
 .compact .go { height: 50px; }
+/* móviles bajos (Android pequeños, iPhone SE, horizontal): casillas más pequeñas para que quepa todo */
+@media (max-height: 720px) {
+  .compact .spot { --d: 90px; }
+  .compact .spot.side { --d: 66px; }
+  .compact .go { height: 46px; }
+}
 @media (max-width: 360px) {
   .compact .spot { --d: 92px; }
   .compact .spot.side { --d: 66px; }

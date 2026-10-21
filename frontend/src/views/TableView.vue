@@ -51,6 +51,10 @@ const secondsTo = (ts) => (ts ? Math.max(0, Math.ceil((ts - serverNow.value) / 1
 // ---------- móvil ----------
 const mq = window.matchMedia('(max-width: 700px)');
 const mqWide = window.matchMedia('(min-width: 1100px)');
+// móvil en horizontal: pantalla baja, la mesa a la izquierda y el panel a la derecha
+const mqShort = window.matchMedia('(max-height: 520px) and (orientation: landscape)');
+const isShort = ref(mqShort.matches);
+const onShort = (e) => (isShort.value = e.matches);
 const isWide = ref(mqWide.matches);
 const onWide = (e) => (isWide.value = e.matches);
 const isMobile = ref(mq.matches);
@@ -404,6 +408,7 @@ onMounted(() => {
   checkScan();
   mq.addEventListener('change', onMq);
   mqWide.addEventListener('change', onWide);
+  mqShort.addEventListener('change', onShort);
 });
 onUnmounted(() => {
   sock.off('table:state', onState);
@@ -418,6 +423,7 @@ onUnmounted(() => {
   clearTimeout(bjTimer);
   mq.removeEventListener('change', onMq);
   mqWide.removeEventListener('change', onWide);
+  mqShort.removeEventListener('change', onShort);
   document.body.style.overflow = '';
 });
 
@@ -557,6 +563,14 @@ const bjStatus = computed(() => {
   if (h?.result?.how === 'nobets') return { text: 'Nadie apostó en esta ronda' };
   return { text: 'Esperando jugadores' };
 });
+// en el móvil, al tocarte apostar o jugar, la pantalla baja sola hasta el panel
+watch(
+  () => bj.value && (bjTurn.value || (hand.value?.stage === 'bets' && bjMe.value && !bjMe.value.ready && !bjMe.value.out)),
+  (now) => {
+    if (!now || !isMobile.value) return;
+    setTimeout(() => document.querySelector('.tp .dock')?.scrollIntoView({ behavior: 'smooth', block: 'end' }), 350);
+  },
+);
 // botón junto al chat: manos de póker o, en el blackjack, reglas y pagos
 const infoOpen = ref(false);
 const infoLabel = computed(() => (bj.value ? 'Reglas y pagos' : 'Manos de póker'));
@@ -644,7 +658,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
+  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, short: isShort, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -736,6 +750,7 @@ watch(
         :turn-left="turnLeft"
         :reactions="reactions"
         :mobile="isMobile"
+        :short="isShort"
       />
       <div v-else class="felt">
         <div class="rail"></div>
@@ -772,7 +787,7 @@ watch(
             :quiet="revealed.length > 0 || (viuda && hand?.stage === 'done')"
             :bet-dir="l.dir"
             :seconds-left="auto && hand?.toAct === l.seat.userId ? turnLeft : 0"
-            :bet-reach="isMobile ? 0.68 : layout.length >= 5 ? 0.58 : 1"
+            :bet-reach="isMobile ? 0.68 : isShort ? 0.5 : layout.length >= 5 ? 0.58 : 1"
             :reaction="reactions[l.seat.userId]"
           />
         </div>
@@ -987,7 +1002,7 @@ watch(
         :last="bjLast"
         :final="bjFinal"
         :busy="busy"
-        :compact="isMobile"
+        :compact="isMobile || isShort"
         :turn-left="turnLeft"
         :turn-pct="turnPct"
         :bet-left="betLeft"
@@ -1413,7 +1428,7 @@ watch(
   .tname { font-size: 16px; }
   .codebtn { padding: 0 9px; letter-spacing: 0.06em; height: 36px; }
   .felt-zone { padding: 78px 22px 14px; min-height: 300px; }
-  .felt-zone.bj { padding: 8px 12px 18px; min-height: 0; flex: none; overflow: visible; }
+  .tp .felt-zone.bj { padding: 8px 12px 14px; min-height: 0; flex: none; overflow: visible; }
   .crowd .felt-zone { min-height: 380px; padding-top: 70px; }
   /* mesa llena: asientos más pequeños para que nada se monte */
   .crowd .seat-pos { transform: translate(-50%, -50%) scale(0.8); }
@@ -1429,6 +1444,21 @@ watch(
   .turn .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
   .turn .status { font-size: 12px; padding: 3px 10px; }
   .padwrap { padding-top: 6px; }
+}
+/* móvil en horizontal: la mesa a la izquierda y el panel a la derecha, cada uno con su scroll */
+@media (max-height: 520px) and (orientation: landscape) {
+  .tp.short:not(.solo) { display: grid; grid-template-columns: 1fr minmax(300px, 44%); grid-template-rows: auto 1fr; overflow: hidden; }
+  .tp.short .bar { grid-column: 1 / -1; padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+  .tp.short:not(.solo) .felt-zone { min-height: 0; overflow-y: auto; padding: 40px 18px 14px max(18px, env(safe-area-inset-left)); }
+  .tp.short:not(.solo) .felt-zone.bj { padding: 6px 10px 12px max(10px, env(safe-area-inset-left)); place-items: start center; }
+  .tp.short:not(.solo) .dock { max-height: none; min-height: 0; overflow-y: auto; background: rgba(11, 16, 38, 0.6); border-left: 1px solid var(--line); padding: 8px max(12px, env(safe-area-inset-right)) calc(8px + var(--safe-b)) 12px; }
+  .tp.short .dock > * { flex-shrink: 0; }
+  .tp.short:not(.solo) .felt-zone:not(.bj) { padding: 36px 34px 30px max(34px, env(safe-area-inset-left)); }
+  .tp.short .seat-pos { transform: translate(-50%, -50%) scale(0.74); }
+  .tp.short .center { gap: 5px; padding: 0 16%; }
+  .tp.short .board :deep(.pcard.md) { --w: 38px; }
+  .tp.short .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
+  .tp.short .felt .status { display: none; } /* el aviso ya sale en el panel de la derecha */
 }
 /* mesa grande: el aviso va encima del bote, lejos de tu asiento */
 @media (min-width: 701px) {

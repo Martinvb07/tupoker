@@ -18,7 +18,8 @@ const props = defineProps({
   statusKind: { type: String, default: '' },
   turnLeft: { type: Number, default: 0 },
   reactions: { type: Object, default: () => ({}) },
-  mobile: Boolean,
+  mobile: Boolean, // pantalla estrecha (móvil en vertical)
+  short: Boolean, // pantalla baja (móvil en horizontal)
 });
 
 const seatsById = computed(() => Object.fromEntries(props.seats.map((s) => [s.userId, s])));
@@ -27,14 +28,19 @@ const spots = computed(() => {
   const list = props.hand
     ? props.hand.players.map((p) => ({ ...p, seat: seatsById.value[p.userId] || { displayName: '—' } }))
     : props.seats.filter((s) => s.status === 'active').map((s) => ({ userId: s.userId, seat: s, stack: s.chips, hands: [], bets: {}, side: {}, idle: true }));
-  // tu casilla, en el centro
+  // tu casilla, en el centro (en el móvil, abajo del todo, junto a tus botones)
   const mine = list.findIndex((x) => x.userId === props.me);
   if (mine < 0) return list;
   const others = list.filter((_, i) => i !== mine);
+  if (props.mobile || props.short) return [...others, list[mine]];
   const half = Math.ceil(others.length / 2);
   return [...others.slice(0, half), list[mine], ...others.slice(half)];
 });
 const many = computed(() => spots.value.length >= 4);
+// en el móvil las casillas de los demás van en pequeño para que tus botones quepan sin deslizar
+const compact = computed(() => props.mobile || props.short);
+const dealerSize = computed(() => (props.short ? 'sm' : props.mobile ? (many.value ? 'sm' : 'md') : 'lg'));
+const cardSize = (p) => (p.userId === props.me ? (compact.value ? 'sm' : 'md') : compact.value || many.value ? 'xs' : 'sm');
 
 const dealer = computed(() => props.hand?.dealer || []);
 const dealerLabel = computed(() => {
@@ -63,9 +69,9 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 </script>
 
 <template>
-  <div class="bjt" :class="{ many, mobile }">
+  <div class="bjt" :class="{ many, mobile, short }">
     <!-- la banca -->
-    <div class="dealer">
+    <div v-if="dealer.length || !compact" class="dealer">
       <div class="d-head">
         <span class="d-name"><Icon name="dealer" :size="15" />Banca</span>
         <Transition name="pop" mode="out-in">
@@ -73,15 +79,15 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
         </Transition>
       </div>
       <TransitionGroup name="deal" tag="div" class="cards dcards">
-        <PlayingCard v-for="(c, i) in dealer" :key="i" :card="c" :size="mobile ? 'md' : 'lg'" :style="{ '--i': i }" />
+        <PlayingCard v-for="(c, i) in dealer" :key="i" :card="c" :size="dealerSize" :style="{ '--i': i }" />
       </TransitionGroup>
-      <div v-if="!dealer.length" class="d-empty">
-        <PlayingCard card="" :size="mobile ? 'md' : 'lg'" placeholder><span></span></PlayingCard>
-        <PlayingCard card="" :size="mobile ? 'md' : 'lg'" placeholder><span></span></PlayingCard>
+      <div v-if="!dealer.length && !compact" class="d-empty">
+        <PlayingCard card="" :size="dealerSize" placeholder><span></span></PlayingCard>
+        <PlayingCard card="" :size="dealerSize" placeholder><span></span></PlayingCard>
       </div>
     </div>
 
-    <div class="arc">
+    <div v-if="!(compact && many)" class="arc">
       <b>Blackjack paga 3 a 2</b>
       <span>La banca pide hasta 17 · Par paga hasta 25 a 1 · 21+3 hasta 100 a 1</span>
     </div>
@@ -92,12 +98,12 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 
     <!-- casillas de los jugadores -->
     <TransitionGroup name="list" tag="div" class="spots">
-      <div v-for="p in spots" :key="p.userId" class="spot" :class="{ me: p.userId === me, turn: turnOf(p), out: p.out || p.idle, ready: p.ready && hand?.stage === 'bets' }">
+      <div v-for="p in spots" :key="p.userId" class="spot" :class="{ mini: compact && p.userId !== me, me: p.userId === me, turn: turnOf(p), out: p.out || p.idle, ready: p.ready && hand?.stage === 'bets' }">
         <!-- manos (al dividir, varias) -->
         <div v-if="p.hands.length" class="hands">
           <div v-for="(h, i) in p.hands" :key="i" class="bjhand" :class="{ cur: turnOf(p) && i === p.cur && p.hands.length > 1 }">
             <TransitionGroup name="deal" tag="div" class="cards">
-              <PlayingCard v-for="(c, j) in h.cards" :key="j" :card="c" :size="p.userId === me ? (mobile ? 'sm' : 'md') : mobile || many ? 'xs' : 'sm'" :style="{ '--i': j }" />
+              <PlayingCard v-for="(c, j) in h.cards" :key="j" :card="c" :size="cardSize(p)" :style="{ '--i': j }" />
             </TransitionGroup>
             <div class="h-meta">
               <span class="tot">{{ totalLabel(h.cards, h.split, h.done) }}</span>
@@ -122,12 +128,12 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 
         <div class="who">
           <span class="ava">
-            <Avatar :user="p.seat" :size="p.userId === me ? 30 : 26" />
+            <Avatar :user="p.seat" :size="p.userId === me ? 30 : compact ? 22 : 26" />
             <Transition name="react"><span v-if="reactions[p.userId]" :key="reactions[p.userId].id" class="react">{{ reactions[p.userId].emoji }}</span></Transition>
           </span>
           <div class="who-txt">
             <b class="ellipsis">{{ p.userId === me ? 'Tú' : p.seat.displayName }}</b>
-            <small class="num">{{ formatChips(p.stack) }}</small>
+            <small class="num">{{ formatChips(p.stack) }}<template v-if="compact && p.userId !== me && p.bets?.main"> · <i>{{ formatChips(p.bets.main) }}</i></template></small>
           </div>
           <span v-if="turnOf(p) && turnLeft" class="timer num"><Icon name="timer" :size="12" />{{ turnLeft }}</span>
           <span v-else-if="hand?.stage === 'bets' && p.ready" class="ok"><Icon name="check" :size="13" /></span>
@@ -221,4 +227,27 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 .mobile .spot { min-width: 88px; padding: 6px 7px; }
 .mobile .spot.me { min-width: 112px; }
 .many.mobile .spot:not(.me) { max-width: 120px; }
+
+/* casillas pequeñas (los demás, en el móvil): cartas y total en una fila, sin apuestas laterales */
+.spot.mini { min-width: 0; gap: 3px; padding: 5px 7px; border-radius: 14px; }
+.spot.mini .bjhand { flex-direction: row; gap: 4px; padding: 1px; }
+.spot.mini .hands { gap: 4px; }
+.spot.mini .bets, .spot.mini .side-win { display: none; }
+.spot.mini .tot { font-size: 11.5px; padding: 1px 6px; min-width: 0; }
+.spot.mini .res { font-size: 10.5px; padding: 1px 6px; }
+.spot.mini .who-txt b { font-size: 11.5px; max-width: 76px; }
+.spot.mini .who-txt small { font-size: 10.5px; }
+.spot.mini .who-txt i { font-style: normal; color: #fff; }
+.mobile .spot.me { min-width: 128px; }
+.mobile .spot.me, .short .spot.me { flex-basis: 100%; max-width: 300px; }
+/* tu casilla en el móvil: cartas a la izquierda, apuestas y nombre a la derecha */
+.mobile .spot.me, .short .spot.me { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: 12px; row-gap: 4px; }
+.mobile .spot.me .hands, .short .spot.me .hands { grid-row: span 3; }
+.mobile .spot.me .bets, .short .spot.me .bets { justify-content: flex-start; }
+
+/* móvil en horizontal: todo más bajo */
+.short { padding: 10px 12px 18px; gap: 6px; border-radius: 22px 22px 50% 50% / 22px 22px 16% 16%; }
+.short .arc { display: none; }
+.short .status { font-size: 12px; padding: 3px 10px; }
+.short .spots { gap: 6px; }
 </style>
