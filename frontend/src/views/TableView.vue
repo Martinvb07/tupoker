@@ -429,6 +429,7 @@ onUnmounted(() => {
   clearInterval(tick);
   clearTimeout(revealTimer);
   clearTimeout(bjTimer);
+  clearTimeout(dealTimer);
   mq.removeEventListener('change', onMq);
   mqWide.removeEventListener('change', onWide);
   mqShort.removeEventListener('change', onShort);
@@ -509,7 +510,6 @@ const seeLeft = computed(() => secondsTo(hand.value?.seeDeadline));
 const viudaTurn = computed(() => viuda.value && hand.value?.stage === 'cambios' && hand.value.toAct === s.value?.me);
 
 // ---------- blackjack ----------
-const bjTurn = computed(() => !!s.value?.bj);
 const bjMe = computed(() => (bj.value && hand.value?.players.find((p) => p.userId === s.value.me)) || null);
 const betLeft = computed(() => secondsTo(hand.value?.betDeadline));
 const betTotal = ref(0);
@@ -519,13 +519,45 @@ const bjLast = ref(null); // apuestas de la ronda anterior, para repetirlas
 async function bjBet(bets) {
   if (await run('bj:bet', { bets })) bjLast.value = bets;
 }
+// reparto como en el casino, carta a carta: una a cada jugador (en su orden), la destapada de la banca,
+// otra vuelta a los jugadores y la tapada de la banca
+const DEAL_MS = 420;
+const bjDeal = ref(Infinity); // cartas del reparto que ya están en la mesa
+let dealTimer = null;
+const dealt = (h) => h.players.filter((p) => p.hands.length);
+function startDeal() {
+  const h = hand.value;
+  clearTimeout(dealTimer);
+  const total = (dealt(h).length + 1) * 2;
+  bjDeal.value = 0;
+  const step = () => {
+    bjDeal.value++;
+    play('card');
+    if (bjDeal.value < total) dealTimer = setTimeout(step, DEAL_MS);
+    else {
+      dealTimer = null;
+      bjDeal.value = Infinity;
+      bjStep(); // si la banca tenía blackjack, ahora destapa
+    }
+  };
+  dealTimer = setTimeout(step, 250);
+}
+watch(
+  () => (bj.value && hand.value ? `${hand.value.no}:${hand.value.stage}` : ''),
+  (now, before) => {
+    const h = hand.value;
+    // solo se anima el reparto que se ve en directo (al entrar a media ronda sale todo de golpe)
+    if (h?.mode === 'blackjack' && before === `${h.no}:bets` && h.stage !== 'bets' && h.dealer.length) startDeal();
+  },
+);
+const bjDealing = computed(() => bjDeal.value !== Infinity);
 // la banca destapa sus cartas una a una; hasta entonces no se enseñan los resultados
 const bjReveal = ref(0);
 let bjTimer = null;
 let bjHandNo = null;
 function bjStep() {
   const h = hand.value;
-  if (bjTimer || h?.mode !== 'blackjack' || !h.dealerOpen || bjReveal.value >= h.dealer.length) return;
+  if (bjTimer || bjDealing.value || h?.mode !== 'blackjack' || !h.dealerOpen || bjReveal.value >= h.dealer.length) return;
   bjTimer = setTimeout(() => {
     bjTimer = null;
     bjReveal.value++;
@@ -546,18 +578,39 @@ watch(
   },
 );
 const bjRevealing = computed(() => !!hand.value?.dealerOpen && bjReveal.value < hand.value.dealer.length);
-const bjFinal = computed(() => hand.value?.stage === 'done' && !bjRevealing.value);
+const bjFinal = computed(() => hand.value?.stage === 'done' && !bjRevealing.value && !bjDealing.value);
+// tu turno, cuando ya has visto el reparto
+const bjTurn = computed(() => !!s.value?.bj && !bjDealing.value);
 const bjView = computed(() => {
   const h = hand.value;
-  if (!h || h.mode !== 'blackjack' || !h.dealerOpen) return h;
-  const n = Math.min(h.dealer.length, Math.max(2, bjReveal.value));
-  return { ...h, dealer: h.dealer.slice(0, n).map((c, i) => (i === 1 && bjReveal.value < 2 ? '' : c)) };
+  if (!h || h.mode !== 'blackjack') return h;
+  let view = h;
+  if (h.dealerOpen) {
+    const n = Math.min(h.dealer.length, Math.max(2, bjReveal.value));
+    view = { ...view, dealer: h.dealer.slice(0, n).map((c, i) => (i === 1 && bjReveal.value < 2 ? '' : c)) };
+  }
+  if (!bjDealing.value) return view;
+  // durante el reparto: solo las cartas que ya salieron, y las apuestas laterales aún sin resolver
+  const seats = dealt(h);
+  const n = seats.length;
+  const shown = (i, j) => j * (n + 1) + i < bjDeal.value;
+  return {
+    ...view,
+    toAct: null, // el turno se marca cuando termina el reparto
+    dealer: view.dealer.filter((_, j) => j >= 2 || shown(n, j)),
+    players: h.players.map((p) => {
+      const i = seats.indexOf(p);
+      if (i < 0) return p;
+      return { ...p, side: {}, hands: p.hands.map((hh, k) => (k ? hh : { ...hh, cards: hh.cards.filter((_, j) => j >= 2 || shown(i, j)) })) };
+    }),
+  };
 });
 const bjStatus = computed(() => {
   const h = hand.value;
   if (!s.value || !bj.value) return { text: '' };
   const t = turnLeft.value ? ` · ${turnLeft.value}s` : '';
   if (h?.stage === 'bets') return { text: `Apuestas abiertas${betLeft.value ? ` · ${betLeft.value}s` : ''}`, kind: bjMe.value && !bjMe.value.ready && !bjMe.value.out ? 'mine' : '' };
+  if (bjDealing.value) return { text: 'Repartiendo…' };
   if (h?.stage === 'play') return h.toAct === s.value.me ? { text: `¡Es tu turno!${t}`, kind: 'mine' } : { text: `Juega ${toActName.value}${t}` };
   if (h && h.stage !== 'done') return { text: 'La banca juega…' };
   if (h && !bjFinal.value) return { text: 'La banca destapa sus cartas…' };
@@ -666,7 +719,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, short: isShort, solo: playerOnly, crowd: layout.length >= 5, toparc: topArc }" v-if="s">
+  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, short: isShort, solo: playerOnly, crowd: layout.length >= 5, toparc: topArc, bjmode: bj }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -1004,7 +1057,7 @@ watch(
         class="rise"
         :hand="bjView"
         :me="bjMe"
-        :opts="s.bj"
+        :opts="bjDealing ? null : s.bj"
         :chips="s.chips"
         :settings="s.settings"
         :last="bjLast"
@@ -1015,7 +1068,7 @@ watch(
         :turn-pct="turnPct"
         :bet-left="betLeft"
         :bet-pct="betPct"
-        :to-act-name="toActName"
+        :to-act-name="bjDealing ? '' : toActName"
         @bet="bjBet"
         @act="(type) => run('bj:act', { type })"
       />
@@ -1437,6 +1490,8 @@ watch(
   .codebtn { padding: 0 9px; letter-spacing: 0.06em; height: 36px; }
   .felt-zone { padding: 78px 22px 14px; min-height: 300px; }
   .tp .felt-zone.bj { padding: 8px 12px 14px; min-height: 0; flex: none; overflow: visible; }
+  /* blackjack: el panel del jugador ocupa el alto libre y se centra en él, sin hueco abajo */
+  .tp.bjmode .dock { flex: 1 0 auto; justify-content: center; }
   .crowd .felt-zone { min-height: 380px; padding-top: 70px; }
   /* mesa llena: asientos más pequeños para que nada se monte */
   .crowd .seat-pos { transform: translate(-50%, -50%) scale(0.8); }

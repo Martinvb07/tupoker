@@ -19,11 +19,11 @@ const props = defineProps({
 });
 const emit = defineEmits(['confirm']);
 
-const SPOTS = [
-  { key: 'pair', label: 'Par', side: true },
-  { key: 'main', label: 'Apuesta' },
-  { key: 't21', label: '21+3', side: true },
-];
+const SPOTS = computed(() => [
+  { key: 'pair', label: 'Par', sub: 'hasta 25:1', side: true },
+  { key: 'main', label: 'Apuesta', sub: `mín. ${formatChips(props.min)}` },
+  { key: 't21', label: '21+3', sub: 'hasta 100:1', side: true },
+]);
 const placed = ref({ pair: [], main: [], t21: [] });
 const order = ref([]); // en qué casilla cayó cada ficha (para deshacer)
 const selected = ref(0);
@@ -31,7 +31,7 @@ const fanOpen = ref(false);
 let uid = 0;
 watch(() => props.chips, () => (selected.value = 0), { immediate: true });
 
-const amount = computed(() => Object.fromEntries(SPOTS.map((s) => [s.key, placed.value[s.key].reduce((a, c) => a + c.value, 0)])));
+const amount = computed(() => Object.fromEntries(SPOTS.value.map((s) => [s.key, placed.value[s.key].reduce((a, c) => a + c.value, 0)])));
 const total = computed(() => amount.value.pair + amount.value.main + amount.value.t21);
 const cap = computed(() => (props.max > 0 ? props.max : Infinity));
 
@@ -74,7 +74,7 @@ function setAll(next) {
     left -= fixed[k];
   }
   placed.value = { pair: toChips(fixed.pair), main: toChips(fixed.main), t21: toChips(fixed.t21) };
-  order.value = SPOTS.flatMap((s) => placed.value[s.key].map(() => s.key));
+  order.value = SPOTS.value.flatMap((s) => placed.value[s.key].map(() => s.key));
 }
 const double = () => setAll({ main: amount.value.main * 2, pair: amount.value.pair * 2, t21: amount.value.t21 * 2 });
 const repeat = () => props.last && setAll(props.last);
@@ -108,7 +108,7 @@ const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
             </div>
           </TransitionGroup>
         </div>
-        <span v-if="!amount[sp.key]" class="lbl">{{ sp.label }}</span>
+        <span v-if="!amount[sp.key]" class="lbl"><b>{{ sp.label }}</b><small>{{ sp.sub }}</small></span>
         <Transition name="fade">
           <span v-if="amount[sp.key]" class="amt num">{{ formatChips(amount[sp.key]) }}</span>
         </Transition>
@@ -158,8 +158,15 @@ const nextIdx = computed(() => (selected.value + 1) % props.chips.length);
 .spot.main .ring { border: 3px solid rgba(245, 181, 68, 0.55); }
 .spot.has .ring { border-color: var(--gold); border-style: solid; }
 .spot.has { box-shadow: 0 0 0 6px #0d1330, 0 0 0 7px rgba(245, 181, 68, 0.35), 0 0 30px -6px rgba(245, 181, 68, 0.5); }
-.lbl { position: relative; font-size: 13px; font-weight: 800; color: rgba(255, 255, 255, 0.75); text-transform: uppercase; letter-spacing: 0.06em; }
-.spot.side .lbl { font-size: 12px; }
+.lbl {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  text-align: center; line-height: 1; pointer-events: none;
+}
+.lbl b { font-size: 15px; font-weight: 900; letter-spacing: 0.04em; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5); }
+.lbl small { font-size: 10.5px; font-weight: 700; color: rgba(255, 255, 255, 0.55); }
+.spot.main .lbl b { font-size: 17px; color: var(--gold-2); }
+.spot.side .lbl b { font-size: 14px; }
+.spot.side .lbl small { font-size: 9.5px; }
 .pile { position: absolute; inset: 0; display: grid; place-items: center; }
 .pile-chip { position: absolute; transition: transform 0.3s var(--ease); }
 .amt {

@@ -14,6 +14,8 @@ export const VIUDA_SEE_MS = Number(process.env.VIUDA_SEE_MS) || 30_000;
 export const BJ_BET_MS = Number(process.env.BJ_BET_MS) || 20_000;
 // blackjack: el móvil destapa las cartas de la banca una a una; se suma ese tiempo antes de la siguiente ronda
 const BJ_DEALER_CARD_MS = 900;
+// y antes reparte carta a carta (las dos de cada jugador y las dos de la banca)
+const BJ_DEAL_CARD_MS = 420;
 const AUTO = engine.AUTO_MODES; // modos sin dealer: turnos con tiempo y manos que salen solas
 // en vivo el dealer pide la siguiente mano y sale tras esta cuenta atrás (le da tiempo a pagar el bote)
 export const LIVE_START_MS = 5_000;
@@ -53,8 +55,10 @@ export function schedule(table) {
     if (t.turnKey !== key) {
       clearTimeout(t.turn);
       t.turnKey = key;
-      hand.turnDeadline = Date.now() + TURN_MS;
-      t.turn = setTimeout(() => onTimeout(table, key), TURN_MS);
+      // blackjack: el primer turno empieza cuando el móvil termina de repartir
+      const deal = hand.mode === 'blackjack' && hand.log.at(-1)?.type === 'deal' ? (hand.players.filter((p) => p.hands.length).length + 1) * 2 * BJ_DEAL_CARD_MS : 0;
+      hand.turnDeadline = Date.now() + TURN_MS + deal;
+      t.turn = setTimeout(() => onTimeout(table, key), TURN_MS + deal);
     }
   } else {
     clearTimeout(t.turn);
@@ -139,8 +143,10 @@ export function schedule(table) {
       // si la mano acabó en all-in, se suma el tiempo que tarda en destaparse el board
       const runout = table.hand.result?.how === 'showdown' && table.hand.players.some((p) => p.allIn);
       // en el blackjack, lo que tardan en destaparse las cartas de la banca
-      const dealerCards = table.hand.mode === 'blackjack' && table.hand.dealerOpen ? table.hand.dealer.length - 1 : 0;
-      const delay = NEXT_HAND_MS + (runout ? RUNOUT_EXTRA_MS : 0) + dealerCards * BJ_DEALER_CARD_MS;
+      const bjHand = table.hand.mode === 'blackjack' && table.hand.dealerOpen;
+      const dealerCards = bjHand ? table.hand.dealer.length - 1 : 0;
+      const dealCards = bjHand ? (table.hand.players.filter((p) => p.hands.length).length + 1) * 2 : 0;
+      const delay = NEXT_HAND_MS + (runout ? RUNOUT_EXTRA_MS : 0) + dealerCards * BJ_DEALER_CARD_MS + dealCards * BJ_DEAL_CARD_MS;
       table.nextHandAt = Date.now() + delay;
       t.next = setTimeout(() => {
         t.next = null;

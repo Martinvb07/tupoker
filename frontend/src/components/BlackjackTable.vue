@@ -71,7 +71,7 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 <template>
   <div class="bjt" :class="{ many, mobile, short }">
     <!-- la banca -->
-    <div v-if="dealer.length || !compact" class="dealer">
+    <div class="dealer" :class="{ empty: !dealer.length }">
       <div class="d-head">
         <span class="d-name"><Icon name="dealer" :size="15" />Banca</span>
         <Transition name="pop" mode="out-in">
@@ -81,7 +81,7 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
       <TransitionGroup name="deal" tag="div" class="cards dcards">
         <PlayingCard v-for="(c, i) in dealer" :key="i" :card="c" :size="dealerSize" :style="{ '--i': i }" />
       </TransitionGroup>
-      <div v-if="!dealer.length && !compact" class="d-empty">
+      <div v-if="!dealer.length" class="d-empty">
         <PlayingCard card="" :size="dealerSize" placeholder><span></span></PlayingCard>
         <PlayingCard card="" :size="dealerSize" placeholder><span></span></PlayingCard>
       </div>
@@ -223,7 +223,11 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 
 .mobile { padding: 14px 10px 26px; gap: 8px; border-radius: 26px 26px 50% 50% / 26px 26px 14% 14%; }
 .mobile .arc span { display: none; }
-.mobile .spots { gap: 6px; }
+.mobile .spots { gap: 6px; align-content: center; align-items: center; }
+/* móviles bajos: sin hueco para las cartas vacías de la banca mientras se apuesta */
+@media (max-height: 700px) {
+  .mobile .dealer.empty { display: none; }
+}
 .mobile .spot { min-width: 88px; padding: 6px 7px; }
 .mobile .spot.me { min-width: 112px; }
 .many.mobile .spot:not(.me) { max-width: 120px; }
