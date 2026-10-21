@@ -84,6 +84,12 @@ const myTurn = computed(() => !!s.value?.legal);
 const myCards = computed(() => me.value?.cards || []);
 const seatsById = computed(() => Object.fromEntries((s.value?.seats || []).map((x) => [x.userId, x])));
 const nameOf = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
+// móvil con 4-5 rivales: asientos solo arriba (ver layout)
+const topArc = computed(() => {
+  if (!isMobile.value || !s.value || bj.value) return false;
+  const seated = s.value.seats.filter(playing).some((x) => x.userId === s.value.me);
+  return (seated || liveDealer.value) && layout.value.length >= 4 && layout.value.length <= 5;
+});
 const opponents = computed(() => (hand.value ? hand.value.players.filter((p) => !p.folded && p.userId !== s.value.me).length : 0));
 const totalPot = computed(() => (hand.value ? hand.value.players.reduce((a, p) => a + p.total, 0) : 0));
 
@@ -157,8 +163,10 @@ const layout = computed(() => {
     // en móvil tu info (o la del dealer) va en el panel de abajo: los jugadores se reparten por arriba
     const others = myIdx >= 0 ? ordered.slice(1) : ordered;
     const n = others.length;
+    // con 4 o 5 rivales van todos por la mitad de arriba: el bote, el board y el aviso quedan libres abajo
+    if (n >= 4 && n <= 5) return others.map((seat, i) => ({ ...pos(seat, Math.PI + ((i + 0.5) * Math.PI) / n, 43, 47), dir: { x: 0, y: 1 } })); // apuestas justo debajo de cada uno
     // con muchos jugadores el arco baja por los lados para que no se monten unos sobre otros
-    if (n >= 4) {
+    if (n >= 6) {
       const from = Math.PI * 0.78, to = Math.PI * 2.22;
       return others.map((seat, i) => pos(seat, from + (i * (to - from)) / (n - 1), 42, 46));
     }
@@ -658,7 +666,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, short: isShort, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
+  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, short: isShort, solo: playerOnly, crowd: layout.length >= 5, toparc: topArc }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -787,14 +795,14 @@ watch(
             :quiet="revealed.length > 0 || (viuda && hand?.stage === 'done')"
             :bet-dir="l.dir"
             :seconds-left="auto && hand?.toAct === l.seat.userId ? turnLeft : 0"
-            :bet-reach="isMobile ? 0.68 : isShort ? 0.5 : layout.length >= 5 ? 0.58 : 1"
+            :bet-reach="topArc ? 0.42 : isMobile ? 0.68 : isShort ? 0.5 : layout.length >= 5 ? 0.58 : 1"
             :reaction="reactions[l.seat.userId]"
           />
         </div>
       </div>
 
       <!-- reacciones y chat (en móvil van en la barra de tu asiento) -->
-      <div v-if="!(isMobile && mySeat)" class="react-fab">
+      <div v-if="!((isMobile || isShort) && mySeat)" class="react-fab">
         <button v-if="!isWide" class="icon-btn react-btn chat-btn" aria-label="Abrir chat" @click="openChat">
           <Icon name="mail" :size="20" />
           <Transition name="pop"><i v-if="chat.unread" class="chat-badge">{{ chat.unread > 9 ? '9+' : chat.unread }}</i></Transition>
@@ -818,7 +826,7 @@ watch(
         <ShowdownStrip v-if="revealed.length" compact :players="revealed" :board="view.board" :final="stripFinal" :all-in="stripAllIn" />
       </Transition>
       <!-- en móvil, tu asiento vive aquí -->
-      <div v-if="isMobile && mySeat && !playerOnly" class="mebar">
+      <div v-if="(isMobile || isShort) && mySeat && !playerOnly" class="mebar">
         <span class="mb-ava">
           <Avatar :user="mySeat" :size="28" />
           <Transition name="react"><span v-if="reactions[s.me]" :key="reactions[s.me].id" class="mb-react">{{ reactions[s.me].emoji }}</span></Transition>
@@ -1061,7 +1069,7 @@ watch(
         <Transition name="betpad">
           <div v-if="myTurn && !noChips && paused" class="paused-note"><Icon name="pause" :size="16" />Tu turno espera: la partida está en pausa por una recompra</div>
           <div v-else-if="myTurn && !noChips" class="padwrap">
-            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="isMobile && !playerOnly" :large="playerOnly" @action="doAction" />
+            <ChipBetPad :legal="s.legal" :chips="s.chips" :pot="totalPot" :busy="busy" :compact="(isMobile && !playerOnly) || isShort" :large="playerOnly && !isShort" @action="doAction" />
           </div>
         </Transition>
         <!-- en vivo, jugador: tus cartas (opcional) y tu probabilidad -->
@@ -1433,6 +1441,12 @@ watch(
   /* mesa llena: asientos más pequeños para que nada se monte */
   .crowd .seat-pos { transform: translate(-50%, -50%) scale(0.8); }
   .crowd .center { padding-top: 0; }
+  /* 4-5 rivales en el móvil: asientos arriba, bote y board en la mitad de abajo */
+  .toparc .felt-zone { min-height: 360px; padding-top: 64px; }
+  .toparc .seat-pos { transform: translate(-50%, -50%) scale(0.86); }
+  .toparc .center { padding-top: 36%; }
+  .toparc.turn .felt-zone { min-height: 330px; }
+  .toparc.turn .center { padding-top: 38%; }
   .felt { border-radius: 50% / 46%; max-height: none; }
   .center { padding: 18% 6% 0; gap: 7px; }
   .board { gap: 4px; }
@@ -1459,6 +1473,17 @@ watch(
   .tp.short .board :deep(.pcard.md) { --w: 38px; }
   .tp.short .pot { font-size: 13px; padding: 3px 10px 3px 4px; }
   .tp.short .felt .status { display: none; } /* el aviso ya sale en el panel de la derecha */
+  /* en vivo, jugador: tus fichas y el bote a la izquierda, cartas y apuesta a la derecha */
+  .tp.short.solo { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; overflow: hidden; }
+  .tp.short.solo .hud { min-height: 0; overflow-y: auto; padding: 4px 10px 10px max(12px, env(safe-area-inset-left)); gap: 8px; }
+  .tp.short.solo .dock { min-height: 0; overflow-y: auto; padding: 6px max(12px, env(safe-area-inset-right)) calc(8px + var(--safe-b)) 10px; }
+  .tp.short .hud-stack { padding: 8px 10px; }
+  .tp.short .hud-big { font-size: 28px; }
+  .tp.short .hud-tile { padding: 6px 10px; }
+  .tp.short .hud-tile b { font-size: 18px; }
+  .tp.short .hud-board { padding: 8px; }
+  .tp.short .hud-board :deep(.pcard.md) { --w: 42px; }
+  .tp.short .hud .status.hud-status { font-size: 13px; padding: 7px 10px; }
 }
 /* mesa grande: el aviso va encima del bote, lejos de tu asiento */
 @media (min-width: 701px) {
