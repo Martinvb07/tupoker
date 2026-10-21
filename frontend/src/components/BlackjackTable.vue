@@ -28,15 +28,39 @@ const spots = computed(() => {
   const list = props.hand
     ? props.hand.players.map((p) => ({ ...p, seat: seatsById.value[p.userId] || { displayName: '—' } }))
     : props.seats.filter((s) => s.status === 'active').map((s) => ({ userId: s.userId, seat: s, stack: s.chips, hands: [], bets: {}, side: {}, idle: true }));
-  // tu casilla, en el centro (en el móvil, abajo del todo, junto a tus botones)
+  // como en una mesa de verdad, sentados por el borde curvo: tú abajo en el centro y los demás
+  // a los lados, en el orden de la mesa (los que van después de ti a tu izquierda)
   const mine = list.findIndex((x) => x.userId === props.me);
-  if (mine < 0) return list;
-  const others = list.filter((_, i) => i !== mine);
-  if (props.mobile || props.short) return [...others, list[mine]];
-  const half = Math.ceil(others.length / 2);
-  return [...others.slice(0, half), list[mine], ...others.slice(half)];
+  if (mine < 0) return list.map((p, i) => ({ ...p, ...arcPos(i, list.length) }));
+  const after = [...list.slice(mine + 1), ...list.slice(0, mine)];
+  const half = Math.ceil(after.length / 2);
+  const left = after.slice(0, half).reverse();
+  const right = after.slice(half);
+  return [
+    ...left.map((p, j) => ({ ...p, ...sidePos(-1, j, left.length) })),
+    { ...list[mine], ...bottom() },
+    ...right.map((p, j) => ({ ...p, ...sidePos(1, right.length - 1 - j, right.length) })),
+  ];
 });
-const many = computed(() => spots.value.length >= 4);
+// el borde de la mesa es media elipse: centro (50%, cy), radios rx y ry (en % de la mesa);
+// en el móvil más cerrada para que los de los extremos no se salgan
+const arc = computed(() => (props.short ? { rx: 37, cy: 34, ry: 47 } : props.mobile ? { rx: 35, cy: 36, ry: 47 } : { rx: 41, cy: 36, ry: 47 }));
+const at = (a) => ({ x: 50 + Math.cos(a) * arc.value.rx, y: arc.value.cy + Math.sin(a) * arc.value.ry });
+const bottom = () => at(Math.PI / 2);
+/** Asientos a un lado del tuyo: del más cercano (j=0) al más alejado, sin pisar tu casilla. */
+function sidePos(side, j, k) {
+  const near = 0.27 * Math.PI;
+  const far = 0.42 * Math.PI;
+  const off = k <= 1 ? (near + far) / 2 : near + (j * (far - near)) / (k - 1);
+  return at(Math.PI / 2 - side * off);
+}
+/** Sin asiento propio (mirando): todos repartidos por el arco. */
+function arcPos(i, n) {
+  if (n <= 1) return bottom();
+  const span = Math.min(0.84, 0.21 * (n - 1)) * Math.PI;
+  return at(Math.PI / 2 + span / 2 - (i * span) / (n - 1));
+}
+const many = computed(() => (props.hand?.players.length ?? props.seats.length) >= 4);
 // en el móvil las casillas de los demás van en pequeño para que tus botones quepan sin deslizar
 const compact = computed(() => props.mobile || props.short);
 const dealerSize = computed(() => (props.short ? 'sm' : props.mobile ? (many.value ? 'sm' : 'md') : 'lg'));
@@ -96,9 +120,9 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
       <div :key="status.replace(/\d+s$/, '')" class="status" :class="statusKind">{{ status }}</div>
     </Transition>
 
-    <!-- casillas de los jugadores -->
-    <TransitionGroup name="list" tag="div" class="spots">
-      <div v-for="p in spots" :key="p.userId" class="spot" :class="{ mini: compact && p.userId !== me, me: p.userId === me, turn: turnOf(p), out: p.out || p.idle, ready: p.ready && hand?.stage === 'bets' }">
+    <!-- jugadores sentados alrededor de la mesa -->
+    <div class="spots">
+      <div v-for="p in spots" :key="p.userId" class="spot" :style="{ left: p.x + '%', top: p.y + '%' }" :class="{ mini: (compact || many) && p.userId !== me, me: p.userId === me, turn: turnOf(p), out: p.out || p.idle, ready: p.ready && hand?.stage === 'bets' }">
         <!-- manos (al dividir, varias) -->
         <div v-if="p.hands.length" class="hands">
           <div v-for="(h, i) in p.hands" :key="i" class="bjhand" :class="{ cur: turnOf(p) && i === p.cur && p.hands.length > 1 }">
@@ -133,20 +157,20 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
           </span>
           <div class="who-txt">
             <b class="ellipsis">{{ p.userId === me ? 'Tú' : p.seat.displayName }}</b>
-            <small class="num">{{ formatChips(p.stack) }}<template v-if="compact && p.userId !== me && p.bets?.main"> · <i>{{ formatChips(p.bets.main) }}</i></template></small>
+            <small class="num">{{ formatChips(p.stack) }}<template v-if="(compact || many) && p.userId !== me && p.bets?.main"> · <i>{{ formatChips(p.bets.main) }}</i></template></small>
           </div>
           <span v-if="turnOf(p) && turnLeft" class="timer num"><Icon name="timer" :size="12" />{{ turnLeft }}</span>
           <span v-else-if="hand?.stage === 'bets' && p.ready" class="ok"><Icon name="check" :size="13" /></span>
         </div>
         <div v-if="p.out && hand && hand.stage !== 'bets'" class="sit">No apostó</div>
       </div>
-    </TransitionGroup>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .bjt {
-  position: relative; width: 100%; max-width: 1000px; min-height: min(100%, 640px); align-self: center;
+  position: relative; width: 100%; max-width: 1000px; height: min(100%, 660px); min-height: 480px; align-self: center;
   display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 16px 30px;
   border-radius: 34px 34px 50% 50% / 34px 34px 22% 22%;
   background: radial-gradient(ellipse at 50% 20%, color-mix(in srgb, var(--felt-a) 100%, #fff 8%), var(--felt-a) 40%, var(--felt-b) 100%);
@@ -170,14 +194,15 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 .status.win { color: #052e16; background: linear-gradient(90deg, #4ade80, #22c55e); }
 .status.lose { color: #fff; background: rgba(244, 63, 94, 0.8); }
 
-.spots { flex: 1; width: 100%; display: flex; flex-wrap: wrap; align-items: flex-end; align-content: flex-end; justify-content: center; gap: 10px; margin-top: 4px; }
+.spots { position: absolute; inset: 0; pointer-events: none; }
 .spot {
-  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 104px; max-width: 220px;
+  position: absolute; transform: translate(-50%, -50%); pointer-events: auto; z-index: 2;
+  transition: left 0.6s var(--ease), top 0.6s var(--ease), border-color 0.3s, box-shadow 0.3s, opacity 0.3s;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 104px; max-width: 220px;
   padding: 8px 10px 8px; border-radius: 18px; background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(255, 255, 255, 0.08);
-  transition: border-color 0.3s, box-shadow 0.3s, opacity 0.3s, transform 0.3s var(--spring);
 }
 .spot.me { background: rgba(0, 0, 0, 0.32); border-color: rgba(245, 181, 68, 0.4); min-width: 130px; }
-.spot.turn { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(245, 181, 68, 0.25), 0 0 30px -6px rgba(245, 181, 68, 0.6); transform: translateY(-3px); }
+.spot.turn { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(245, 181, 68, 0.25), 0 0 30px -6px rgba(245, 181, 68, 0.6); z-index: 3; }
 .spot.ready { border-color: rgba(34, 197, 94, 0.5); }
 .spot.out { opacity: 0.5; }
 .hands { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -221,12 +246,14 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 .deal-enter-active { transition: transform 0.45s var(--spring), opacity 0.3s; transition-delay: calc(var(--i, 0) * 0.08s); }
 .deal-enter-from { transform: translate(40px, -60px) rotate(12deg) scale(0.7); opacity: 0; }
 
-.mobile { padding: 14px 10px 26px; gap: 8px; border-radius: 26px 26px 50% 50% / 26px 26px 14% 14%; }
+.mobile { height: 440px; min-height: 0; padding: 14px 10px 26px; gap: 8px; border-radius: 26px 26px 50% 50% / 26px 26px 30% 30%; }
+.many.mobile { height: 470px; }
 .mobile .arc span { display: none; }
-.mobile .spots { gap: 6px; align-content: center; align-items: center; }
 /* móviles bajos: sin hueco para las cartas vacías de la banca mientras se apuesta */
 @media (max-height: 700px) {
   .mobile .dealer.empty { display: none; }
+  .mobile { height: 400px; }
+  .many.mobile { height: 430px; }
 }
 .mobile .spot { min-width: 88px; padding: 6px 7px; }
 .mobile .spot.me { min-width: 112px; }
@@ -243,15 +270,16 @@ const turnOf = (p) => props.hand?.stage === 'play' && props.hand.toAct === p.use
 .spot.mini .who-txt small { font-size: 10.5px; }
 .spot.mini .who-txt i { font-style: normal; color: #fff; }
 .mobile .spot.me { min-width: 128px; }
-.mobile .spot.me, .short .spot.me { flex-basis: 100%; max-width: 300px; }
+.mobile .spot.me, .short .spot.me { max-width: 230px; }
 /* tu casilla en el móvil: cartas a la izquierda, apuestas y nombre a la derecha */
 .mobile .spot.me, .short .spot.me { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: center; column-gap: 12px; row-gap: 4px; }
 .mobile .spot.me .hands, .short .spot.me .hands { grid-row: span 3; }
 .mobile .spot.me .bets, .short .spot.me .bets { justify-content: flex-start; }
 
 /* móvil en horizontal: todo más bajo */
-.short { padding: 10px 12px 18px; gap: 6px; border-radius: 22px 22px 50% 50% / 22px 22px 16% 16%; }
+.short { height: 430px; min-height: 0; padding: 10px 12px 18px; gap: 6px; border-radius: 22px 22px 50% 50% / 22px 22px 30% 30%; }
 .short .arc { display: none; }
+
 .short .status { font-size: 12px; padding: 3px 10px; }
-.short .spots { gap: 6px; }
+
 </style>
