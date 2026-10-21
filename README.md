@@ -4,10 +4,12 @@ Web para gestionar partidas de póker Texas Hold'em con amigos usando **cartas f
 
 ## Funcionalidades
 
-- **3 modos de juego**:
+- **4 modos de juego**:
   - 🃏 **En vivo**: cartas físicas y fichas. Quien crea la mesa es **siempre el dealer y no juega**: fija mínima, máxima y fichas, reparte, pone el flop/turn/river, decide quién gana y paga el bote; la siguiente mano sale tras una cuenta atrás de 5 s. Los jugadores, en el móvil, no ven la mesa: solo sus fichas, el bote, las cartas comunes y el panel para apostar. Pueden registrar sus cartas (opcional, se pueden tapar) para ver su probabilidad; cambiarlas después requiere el permiso del dealer. Si alguien no las registra, la app no sugiere ganador. Una recompra **pausa la partida** hasta que todos aceptan y el dealer la valida.
   - 🎲 **Aleatorio**: con fichas. La app baraja y reparte las cartas y el board, y el showdown se resuelve solo.
   - 🂠 **Viuda**: sin fichas ni dealer. La app reparte 5 cartas a cada uno y 5 boca abajo al centro (la viuda). Sin ver tus cartas puedes llevarte las del centro; cuando todos han visto las suyas, por turnos: cambia 1 carta por 1 del centro, pasa o toca. Al tocar, los demás juegan una última vez y gana la mejor mano de póker. De 2 a 9 jugadores; no cuenta para los rankings.
+  - ♣ **Blackjack**: cada uno contra la banca (la app), con fichas y un sabot de 6 barajas. Se apuesta con el mismo panel de fichas: apuesta principal y, opcionalmente, **Par** (pareja perfecta 25:1, de color 12:1, mixta 6:1) y **21+3** (trío del mismo palo 100:1, escalera de color 40:1, trío 30:1, escalera 10:1, color 5:1). Pedir, plantarse, doblar y dividir; la banca pide hasta 17 y blackjack paga 3:2. Se puede jugar solo; no cuenta para los rankings.
+- **Manos de póker**: en la mesa, junto al chat, un botón abre la tabla de jugadas con un ejemplo de cada una (en el blackjack, las reglas y los pagos).
 - **Partida terminada**: cuando un jugador se queda con todas las fichas, el dealer puede empezar una **nueva partida** (todos vuelven a las fichas iniciales) o hacer recompras.
 - **Cuentas** con usuario y contraseña. Todos empiezan con el mismo rol.
 - **Mesas** con código de 6 letras y **QR** para entrar. El **dealer** define la apuesta mínima (ciega grande) y la máxima, y de ahí salen las **fichas** de la mesa (5K, 25K, 50K…). Fuera del modo en vivo, el rol de dealer lo pasa el creador o el dealer actual, y puede jugar o solo repartir.

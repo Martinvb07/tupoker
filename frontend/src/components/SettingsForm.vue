@@ -63,20 +63,22 @@ function removeChip(v) {
     <Transition name="fade">
       <div v-if="mode !== 'viuda'" class="stack">
         <label class="field">
-          <span>Apuesta mínima (ciega grande)</span>
+          <span>{{ mode === 'blackjack' ? 'Apuesta mínima por mano' : 'Apuesta mínima (ciega grande)' }}</span>
           <input class="input num" type="number" min="1" inputmode="numeric" :value="model.minBet" @input="set('minBet', Number($event.target.value))" />
           <div class="pills">
             <button v-for="p in MIN_PRESETS" :key="p" type="button" class="pill" :class="{ on: model.minBet === p }" @click="set('minBet', p)">
               {{ formatChips(p) }}
             </button>
           </div>
-          <span class="hint">Ciega pequeña: {{ formatChips(sb) }} · Ciega grande: {{ formatChips(model.minBet || 0) }}</span>
+          <span v-if="mode === 'blackjack'" class="hint">Nadie puede apostar menos de {{ formatChips(model.minBet || 0) }} a la mano</span>
+          <span v-else class="hint">Ciega pequeña: {{ formatChips(sb) }} · Ciega grande: {{ formatChips(model.minBet || 0) }}</span>
         </label>
 
         <label class="field">
-          <span>Apuesta máxima por jugada</span>
+          <span>{{ mode === 'blackjack' ? 'Apuesta máxima por mano' : 'Apuesta máxima por jugada' }}</span>
           <input class="input num" type="number" min="0" inputmode="numeric" :value="model.maxBet" placeholder="0 = sin límite" @input="set('maxBet', Number($event.target.value))" />
-          <span class="hint">{{ model.maxBet > 0 ? `Nadie podrá subir más de ${formatChips(model.maxBet)} de una vez` : 'Sin límite (No-Limit)' }}</span>
+          <span v-if="mode === 'blackjack'" class="hint">{{ model.maxBet > 0 ? `Máximo ${formatChips(model.maxBet)} por apuesta (también en Par y 21+3)` : 'Sin límite' }}</span>
+          <span v-else class="hint">{{ model.maxBet > 0 ? `Nadie podrá subir más de ${formatChips(model.maxBet)} de una vez` : 'Sin límite (No-Limit)' }}</span>
         </label>
 
         <label v-if="!hideStarting" class="field">
@@ -84,7 +86,7 @@ function removeChip(v) {
           <input class="input num" type="number" min="1" inputmode="numeric" :value="model.startingChips" @input="set('startingChips', Number($event.target.value))" />
           <div class="pills">
             <button v-for="m in [50, 100, 200]" :key="m" type="button" class="pill" @click="set('startingChips', (model.minBet || 1) * m)">
-              {{ m }} ciegas · {{ formatChips((model.minBet || 1) * m) }}
+              {{ m }} {{ mode === 'blackjack' ? 'mínimas' : 'ciegas' }} · {{ formatChips((model.minBet || 1) * m) }}
             </button>
           </div>
         </label>
@@ -132,12 +134,18 @@ function removeChip(v) {
         cuando todos han visto las suyas, por turnos: cambia 1 carta por 1 del centro, pasa o toca. Al tocar, los demás juegan una última vez y gana la mejor mano. De 2 a 9 jugadores.
       </p>
     </Transition>
+    <Transition name="fade">
+      <p v-if="mode === 'blackjack'" class="hint offline-note">
+        Cada jugador juega contra la banca (la app), con un sabot de 6 barajas. La banca pide hasta 17 y se planta con 17 blando. Blackjack paga 3 a 2;
+        se puede doblar con las dos primeras cartas y dividir parejas. Apuestas laterales: Par (hasta 25 a 1) y 21+3 (hasta 100 a 1). Se puede jugar solo. No cuenta para los rankings de póker.
+      </p>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
 .modes { display: grid; grid-template-columns: 1fr; gap: 8px; }
-@media (min-width: 560px) { .modes { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 560px) { .modes { grid-template-columns: repeat(2, 1fr); } }
 .mode {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left;
   padding: 14px; border-radius: 16px; background: rgba(5, 9, 28, 0.45); border: 1px solid var(--line);

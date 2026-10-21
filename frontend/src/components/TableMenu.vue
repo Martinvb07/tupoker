@@ -44,7 +44,8 @@ async function newGame() {
   if (await props.run('dealer:resetChips')) emit('close');
 }
 
-const isRandom = computed(() => (props.state.settings.mode || 'live') === 'random');
+const isRandom = computed(() => ['random', 'blackjack'].includes(props.state.settings.mode || 'live'));
+const isBlackjack = computed(() => props.state.settings.mode === 'blackjack');
 const isLive = computed(() => (props.state.settings.mode || 'live') === 'live');
 // en vivo el dealer es siempre quien creó la mesa: no se puede pasar el rol
 const canAssignDealer = computed(() => !isRandom.value && !isLive.value && (props.state.isDealer || props.state.isOwner));
@@ -116,7 +117,7 @@ async function closeTable() {
             </div>
           </Transition>
         </div>
-        <p class="hint">{{ isRandom ? "En modo aleatorio no hay dealer: la app reparte y las manos salen solas. El anfitrión gestiona fichas y ajustes." : isLive ? "En vivo el dealer es siempre quien creó la mesa: reparte, pone las cartas, decide los ganadores y valida las recompras." : "El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol." }}</p>
+        <p class="hint">{{ isBlackjack ? "En el blackjack la banca es la app: reparte, juega y paga. El anfitrión gestiona fichas y ajustes." : isRandom ? "En modo aleatorio no hay dealer: la app reparte y las manos salen solas. El anfitrión gestiona fichas y ajustes." : isLive ? "En vivo el dealer es siempre quien creó la mesa: reparte, pone las cartas, decide los ganadores y valida las recompras." : "El dealer reparte, pone las cartas comunes y decide los ganadores. El creador de la mesa o el dealer actual pueden pasar el rol." }}</p>
       </div>
 
       <div v-else-if="tab === 'settings'" key="s" class="stack">

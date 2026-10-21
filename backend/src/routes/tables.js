@@ -18,7 +18,7 @@ export async function closeTableNow(t) {
 const r = Router();
 r.use(requireAuth);
 
-const MODES = ['live', 'random', 'viuda'];
+const MODES = ['live', 'random', 'viuda', 'blackjack'];
 const normMode = (m) => (m === 'offline' ? 'viuda' : m); // «sin dinero» pasó a ser la viuda
 
 function cleanChips(list) {

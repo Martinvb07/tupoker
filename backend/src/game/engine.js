@@ -1,16 +1,21 @@
-// Lógica pura de una mano de Texas Hold'em. Tres modos:
-//  - live:    cartas físicas; el dealer introduce el board, los jugadores sus cartas, con fichas.
-//  - random:  la app baraja y reparte cartas y board, con fichas.
-//  - viuda:   sin fichas; la app reparte 5 cartas a cada uno y 5 al centro (ver la sección «La viuda»).
+// Lógica pura de una mano de Texas Hold'em. Cuatro modos:
+//  - live:      cartas físicas; el dealer introduce el board, los jugadores sus cartas, con fichas.
+//  - random:    la app baraja y reparte cartas y board, con fichas.
+//  - viuda:     sin fichas; la app reparte 5 cartas a cada uno y 5 al centro (ver la sección «La viuda»).
+//  - blackjack: cada uno contra la banca (la app), con fichas (ver blackjack.js).
 import { randomInt } from 'node:crypto';
 import { evaluate, isValidCard, FULL_DECK } from '../../shared/poker.js';
+import * as bj from './blackjack.js';
 
 export class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
 
 const STAGES = ['preflop', 'flop', 'turn', 'river'];
 const BOARD_SIZE = { flop: 3, turn: 4, river: 5 };
-export const MODES = ['live', 'random', 'viuda'];
+export const MODES = ['live', 'random', 'viuda', 'blackjack'];
+// modos sin dealer: la app reparte, los turnos tienen tiempo y las manos salen solas
+export const AUTO_MODES = ['random', 'viuda', 'blackjack'];
+export const isAuto = (table) => AUTO_MODES.includes(modeOf(table));
 
 export function blinds(settings) {
   const bb = Math.max(1, Math.floor(settings.minBet));
@@ -38,6 +43,8 @@ const playable = (seat) => seat.status === 'active' && seat.chips > 0;
 const playableIn = (mode) => (mode === 'viuda' ? (seat) => seat.status === 'active' : playable);
 // en vivo el dealer solo reparte: nunca entra en las manos
 const playableAt = (table) => {
+  // al blackjack entra quien llega a la apuesta mínima
+  if (modeOf(table) === 'blackjack') return (seat) => seat.status === 'active' && seat.chips >= table.settings.minBet;
   const ok = playableIn(modeOf(table));
   return modeOf(table) === 'live' ? (seat) => ok(seat) && seat.userId !== table.dealerId : ok;
 };
@@ -90,6 +97,11 @@ export function startHand(table) {
   const mode = modeOf(table);
   const ok = playableAt(table);
   const seats = table.seats.filter(ok);
+  // al blackjack se puede jugar solo contra la banca
+  if (mode === 'blackjack') {
+    if (!seats.length) fail('Nadie llega a la apuesta mínima');
+    return bj.startRound(table, seats);
+  }
   if (seats.length < 2) fail(mode === 'viuda' ? 'Se necesitan al menos 2 jugadores activos' : 'Se necesitan al menos 2 jugadores con fichas');
   if (mode === 'viuda' && seats.length > VIUDA_MAX) fail(`En la viuda juegan como máximo ${VIUDA_MAX} (no hay cartas para más)`);
 
@@ -185,7 +197,7 @@ function roundComplete(hand) {
 export function legalActions(table, userId) {
   const hand = table.hand;
   if (!hand || hand.toAct !== userId || hand.awaiting || hand.stage === 'showdown' || hand.stage === 'done') return null;
-  if (handMode(hand) === 'viuda') return null;
+  if (handMode(hand) === 'viuda' || handMode(hand) === 'blackjack') return null;
   const p = getPlayer(hand, userId);
   const toCall = Math.max(0, hand.currentBet - p.bet);
   const maxInc = table.settings.maxBet > 0 ? table.settings.maxBet : Infinity;
@@ -211,6 +223,7 @@ export function act(table, userId, type, amountTo) {
   const hand = table.hand;
   if (!hand || hand.stage === 'done' || hand.stage === 'showdown') fail('No hay ninguna ronda de apuestas activa');
   if (handMode(hand) === 'viuda') fail('En la viuda no hay apuestas');
+  if (handMode(hand) === 'blackjack') fail('En el blackjack se juega contra la banca');
   if (hand.awaiting) fail('Esperando a que el dealer ponga las cartas');
   if (hand.toAct !== userId) fail('No es tu turno');
   const p = getPlayer(hand, userId);
@@ -569,6 +582,7 @@ export function foldOut(table, userId) {
   const p = getPlayer(hand, userId);
   if (!p || p.folded) return;
   if (handMode(hand) === 'viuda') return viudaLeave(table, p);
+  if (handMode(hand) === 'blackjack') return bj.standAll(table, userId);
   if (hand.toAct === userId) return act(table, userId, 'fold');
   p.folded = true;
   p.last = { type: 'fold' };
@@ -590,6 +604,7 @@ export function forceFold(table, userId) {
   const hand = table.hand;
   if (!hand || hand.toAct !== userId) fail('Ese jugador no tiene el turno');
   if (handMode(hand) === 'viuda') return viudaAct(table, userId, { type: 'pass' });
+  if (handMode(hand) === 'blackjack') return bj.act(table, userId, 'stand');
   const legal = legalActions(table, userId);
   return act(table, userId, legal?.canCheck ? 'check' : 'fold');
 }
@@ -605,6 +620,13 @@ export function cancelHand(table) {
   table.hand = null;
   table.handNo = Math.max(0, (table.handNo || 1) - 1);
 }
+
+// ---------------- Blackjack ----------------
+
+export const bjBet = (table, userId, bets) => bj.placeBets(table, userId, bets);
+export const bjAct = (table, userId, type) => bj.act(table, userId, type);
+export const bjCloseBets = (table) => bj.closeBets(table);
+export const bjOptions = (table, userId) => bj.options(table, userId);
 
 // ---------------- La viuda ----------------
 // Sin fichas. La app reparte, una a una, 5 cartas a cada jugador y 5 al centro boca abajo (la viuda).

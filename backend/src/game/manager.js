@@ -2,7 +2,8 @@
 // IMPORTANTE: el estado vive en memoria, así que pm2 debe correr en modo fork con 1 instancia.
 import { Table, Hand, PlayerHand } from '../models.js';
 import { chipDenominations } from '../../shared/poker.js';
-import { GameError, legalActions, isHandLive, getPlayer, modeOf } from './engine.js';
+import { GameError, legalActions, isHandLive, getPlayer, modeOf, isAuto } from './engine.js';
+import * as bj from './blackjack.js';
 
 const cache = new Map(); // code -> table (objeto plano)
 const saveChains = new Map();
@@ -145,8 +146,8 @@ export function activeTableOf(userId) {
 /** Quién gestiona la mesa: el dealer; en modo aleatorio (sin dealer) también el anfitrión. */
 export function canManage(table, userId) {
   if (table.dealerId === userId) return true;
-  // sin dealer (aleatorio y viuda) gestiona el anfitrión
-  return ['random', 'viuda'].includes(modeOf(table)) && table.ownerId === userId;
+  // sin dealer (aleatorio, viuda y blackjack) gestiona el anfitrión
+  return isAuto(table) && table.ownerId === userId;
 }
 
 // ---------------- Vista por usuario ----------------
@@ -155,6 +156,7 @@ export function viewFor(table, userId) {
   const hand = table.hand;
   const reveal = hand && (hand.stage === 'showdown' || (hand.stage === 'done' && hand.result?.how === 'showdown'));
   const isDealer = table.dealerId === userId;
+  const bjv = hand?.mode === 'blackjack' ? bj.view(hand) : null;
   return {
     id: table._id,
     code: table.code,
@@ -195,11 +197,13 @@ export function viewFor(table, userId) {
           handNames: reveal ? hand.handNames || {} : {},
           potTotal: hand.players.reduce((s, p) => s + p.total - p.bet, 0),
           log: hand.log.slice(-30),
+          // blackjack: todo boca arriba menos la carta tapada de la banca
+          ...bjv,
           // la viuda: el centro solo se ve cuando está boca arriba
           ...(hand.mode === 'viuda'
             ? { widow: hand.widowOpen || reveal ? hand.widow : [], widowOpen: !!hand.widowOpen, knockBy: hand.knockBy, lastTurns: hand.lastTurns, widowDeals: hand.widowDeals || 0 }
             : {}),
-          players: hand.players.map((p) => ({
+          players: bjv ? bjv.players : hand.players.map((p) => ({
             userId: p.userId,
             stack: p.stack,
             bet: p.bet,
@@ -223,6 +227,7 @@ export function viewFor(table, userId) {
         }
       : null,
     legal: legalActions(table, userId),
+    bj: bj.options(table, userId),
     inHand: !!(hand && getPlayer(hand, userId) && isHandLive(table)),
   };
 }

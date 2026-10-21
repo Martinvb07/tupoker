@@ -15,7 +15,7 @@ const loading = ref(false);
 async function create() {
   loading.value = true;
   try {
-    const { code } = await api.post('/tables', { name: name.value, ...settings.value, dealerPlays: dealerPlays.value });
+    const { code } = await api.post('/tables', { name: name.value, ...settings.value, dealerPlays: dealerPlays.value || settings.value.mode === 'blackjack' });
     router.push({ path: `/mesa/${code}`, query: { share: '1' } });
   } catch (e) {
     toast.error(e.message);
@@ -31,7 +31,8 @@ async function create() {
       <div>
         <div class="eyebrow">Nueva mesa</div>
         <h1>Prepara la partida</h1>
-        <p>Tú serás el dealer: eliges el modo, la mínima, la máxima y las fichas.{{ settings.mode === 'live' ? ' En vivo lo eres siempre y no juegas: repartes, pones las cartas, decides quién gana y validas las recompras; los demás apuestan desde el móvil.' : ' Luego podrás pasar el rol a otro.' }}</p>
+        <p v-if="settings.mode === 'blackjack'">La banca es la app: reparte y paga. Tú eliges la apuesta mínima, la máxima y las fichas de cada jugador.</p>
+        <p v-else>Tú serás el dealer: eliges el modo, la mínima, la máxima y las fichas.{{ settings.mode === 'live' ? ' En vivo lo eres siempre y no juegas: repartes, pones las cartas, decides quién gana y validas las recompras; los demás apuestan desde el móvil.' : ' Luego podrás pasar el rol a otro.' }}</p>
       </div>
     </div>
 
@@ -42,7 +43,7 @@ async function create() {
       </label>
       <SettingsForm v-model="settings" />
       <!-- en vivo el dealer no juega: solo reparte -->
-      <label v-if="settings.mode !== 'live'" class="toggle">
+      <label v-if="settings.mode !== 'live' && settings.mode !== 'blackjack'" class="toggle">
         <div>
           <b>Yo también juego</b>
           <div class="small muted">Si lo desactivas, solo repartes y pones las cartas.</div>

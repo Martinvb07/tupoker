@@ -22,6 +22,10 @@ import ScanButton from '@/components/ScanButton.vue';
 import ChatPanel from '@/components/ChatPanel.vue';
 import ReactButtons from '@/components/ReactButtons.vue';
 import ViudaPanel from '@/components/ViudaPanel.vue';
+import BlackjackTable from '@/components/BlackjackTable.vue';
+import BlackjackPanel from '@/components/BlackjackPanel.vue';
+import BlackjackPaysSheet from '@/components/BlackjackPaysSheet.vue';
+import HandRankingsSheet from '@/components/HandRankingsSheet.vue';
 import { useTween } from '@/lib/tween.js';
 import { play, soundOn, vibrate } from '@/lib/sfx.js';
 import { scanEnabled, checkScan } from '@/lib/vision.js';
@@ -60,7 +64,9 @@ const mode = computed(() => (live.value ? hand.value.mode : s.value?.settings.mo
 const viuda = computed(() => mode.value === 'viuda');
 const noChips = viuda;
 const random = computed(() => mode.value === 'random');
-const auto = computed(() => random.value || viuda.value);
+// blackjack: cada uno contra la banca (la app); también sin dealer y con manos que salen solas
+const bj = computed(() => mode.value === 'blackjack');
+const auto = computed(() => random.value || viuda.value || bj.value);
 const manager = computed(() => !!s.value?.canManage);
 const showDealerBar = computed(() => manager.value && !auto.value);
 // en vivo los jugadores (todos menos el dealer) no ven la mesa: solo sus fichas, el bote y los botones para apostar
@@ -225,11 +231,13 @@ const winnerText = computed(() => {
 // ---------- partida terminada / recompras ----------
 const activeSeats = computed(() => (s.value?.seats || []).filter((x) => x.status === 'active' && playing(x)));
 const withChips = computed(() => activeSeats.value.filter((x) => x.chips > 0));
-const gameOver = computed(() => !!s.value && !noChips.value && !live.value && !revealing.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
+const gameOver = computed(() => !!s.value && !noChips.value && !bj.value && !live.value && !revealing.value && activeSeats.value.length >= 2 && withChips.value.length < 2);
 const champion = computed(() => (gameOver.value && withChips.value.length === 1 ? withChips.value[0] : null));
 const canStart = computed(() => {
   if (live.value) return false;
   if (!manager.value && !(auto.value && mySeat.value)) return false;
+  // al blackjack se juega solo contra la banca: basta con que alguien llegue a la mínima
+  if (bj.value) return activeSeats.value.some((x) => x.chips >= s.value.settings.minBet);
   return (noChips.value ? activeSeats.value.length : withChips.value.length) >= 2;
 });
 // en vivo: peticiones que aprueba el dealer
@@ -283,8 +291,10 @@ async function confirmRebuy() {
   if (!(await run('table:rebuy', { amount: rebuyAmount.value }))) return;
   rebuyOpen.value = false;
   menu.value.open = false;
-  toast.success(random.value ? 'Petición enviada: todos tienen que aceptarla' : 'Petición enviada: la partida queda en pausa');
+  toast.success(votedRebuy.value ? 'Petición enviada: todos tienen que aceptarla' : 'Petición enviada: la partida queda en pausa');
 }
+// aleatorio y blackjack: la recompra la aceptan todos los demás jugadores
+const votedRebuy = computed(() => random.value || bj.value);
 const nameOfSeat = (id) => (id === s.value?.me ? 'Tú' : seatsById.value[id]?.displayName || '—');
 
 // ---------- reacciones con emoji ----------
@@ -405,6 +415,7 @@ onUnmounted(() => {
   sock.emit('table:unsubscribe', { code: code.value });
   clearInterval(tick);
   clearTimeout(revealTimer);
+  clearTimeout(bjTimer);
   mq.removeEventListener('change', onMq);
   mqWide.removeEventListener('change', onWide);
   document.body.style.overflow = '';
@@ -482,6 +493,73 @@ const turnPct = computed(() => (turnTotal.value ? Math.min(100, (turnLeft.value 
 const nextHandIn = computed(() => secondsTo(s.value?.nextHandAt));
 const seeLeft = computed(() => secondsTo(hand.value?.seeDeadline));
 const viudaTurn = computed(() => viuda.value && hand.value?.stage === 'cambios' && hand.value.toAct === s.value?.me);
+
+// ---------- blackjack ----------
+const bjTurn = computed(() => !!s.value?.bj);
+const bjMe = computed(() => (bj.value && hand.value?.players.find((p) => p.userId === s.value.me)) || null);
+const betLeft = computed(() => secondsTo(hand.value?.betDeadline));
+const betTotal = ref(0);
+watch(() => hand.value?.betDeadline, (d) => (betTotal.value = d ? Math.max(1, secondsTo(d)) : 0));
+const betPct = computed(() => (betTotal.value ? Math.min(100, (betLeft.value / betTotal.value) * 100) : 0));
+const bjLast = ref(null); // apuestas de la ronda anterior, para repetirlas
+async function bjBet(bets) {
+  if (await run('bj:bet', { bets })) bjLast.value = bets;
+}
+// la banca destapa sus cartas una a una; hasta entonces no se enseñan los resultados
+const bjReveal = ref(0);
+let bjTimer = null;
+let bjHandNo = null;
+function bjStep() {
+  const h = hand.value;
+  if (bjTimer || h?.mode !== 'blackjack' || !h.dealerOpen || bjReveal.value >= h.dealer.length) return;
+  bjTimer = setTimeout(() => {
+    bjTimer = null;
+    bjReveal.value++;
+    play('card');
+    bjStep();
+  }, bjReveal.value < 2 ? 650 : 900);
+}
+watch(
+  () => [hand.value?.no, hand.value?.dealer?.length, hand.value?.dealerOpen],
+  () => {
+    const h = hand.value;
+    if (h?.mode !== 'blackjack') return;
+    // al entrar a media ronda no se anima
+    if (bjHandNo === null) bjReveal.value = h.dealerOpen ? h.dealer.length : 1;
+    else if (h.no !== bjHandNo || !h.dealerOpen) bjReveal.value = 1;
+    bjHandNo = h.no;
+    bjStep();
+  },
+);
+const bjRevealing = computed(() => !!hand.value?.dealerOpen && bjReveal.value < hand.value.dealer.length);
+const bjFinal = computed(() => hand.value?.stage === 'done' && !bjRevealing.value);
+const bjView = computed(() => {
+  const h = hand.value;
+  if (!h || h.mode !== 'blackjack' || !h.dealerOpen) return h;
+  const n = Math.min(h.dealer.length, Math.max(2, bjReveal.value));
+  return { ...h, dealer: h.dealer.slice(0, n).map((c, i) => (i === 1 && bjReveal.value < 2 ? '' : c)) };
+});
+const bjStatus = computed(() => {
+  const h = hand.value;
+  if (!s.value || !bj.value) return { text: '' };
+  const t = turnLeft.value ? ` · ${turnLeft.value}s` : '';
+  if (h?.stage === 'bets') return { text: `Apuestas abiertas${betLeft.value ? ` · ${betLeft.value}s` : ''}`, kind: bjMe.value && !bjMe.value.ready && !bjMe.value.out ? 'mine' : '' };
+  if (h?.stage === 'play') return h.toAct === s.value.me ? { text: `¡Es tu turno!${t}`, kind: 'mine' } : { text: `Juega ${toActName.value}${t}` };
+  if (h && h.stage !== 'done') return { text: 'La banca juega…' };
+  if (h && !bjFinal.value) return { text: 'La banca destapa sus cartas…' };
+  if (h?.result?.how === 'settled') {
+    const r = h.result;
+    const net = r.net?.[s.value.me];
+    const pre = r.dealerBJ ? 'Blackjack de la banca' : r.dealerTotal > 21 ? 'La banca se pasa' : `La banca tiene ${r.dealerTotal}`;
+    if (net === undefined) return { text: pre };
+    return { text: `${pre} · ${net > 0 ? `ganas ${formatChips(net)}` : net < 0 ? `pierdes ${formatChips(-net)}` : 'empate'}`, kind: net > 0 ? 'win' : net < 0 ? 'lose' : '' };
+  }
+  if (h?.result?.how === 'nobets') return { text: 'Nadie apostó en esta ronda' };
+  return { text: 'Esperando jugadores' };
+});
+// botón junto al chat: manos de póker o, en el blackjack, reglas y pagos
+const infoOpen = ref(false);
+const infoLabel = computed(() => (bj.value ? 'Reglas y pagos' : 'Manos de póker'));
 const statusLine = computed(() => {
   const h = view.value;
   if (!s.value) return '';
@@ -514,11 +592,14 @@ const payouts = computed(() => {
 // cada vez que cambia lo que toca hacer, la barra del dealer entra de nuevo con animación
 const dealerKey = computed(() => (live.value ? `${hand.value.no}-${hand.value.awaiting || hand.value.stage}` : `idle-${!!nextHandIn.value}`));
 // ---------- sonidos: repartir, tu turno, ganar y tocar (viuda) ----------
-watch(() => hand.value?.no, (no, before) => before && no && no !== before && play('deal'));
-watch(() => myTurn.value || viudaTurn.value, (now) => now && play('turn'));
+watch(() => hand.value?.no, (no, before) => before && no && no !== before && !bj.value && play('deal'));
+watch(() => myTurn.value || viudaTurn.value || bjTurn.value, (now) => now && play('turn'));
+// blackjack: el reparto suena al cerrarse las apuestas
+watch(() => (bj.value ? hand.value?.stage : null), (st, before) => st === 'play' && before === 'bets' && play('deal'));
 const iWon = computed(() => {
   const h = view.value;
   if (!h || h.stage !== 'done' || revealing.value || !h.result) return false;
+  if (h.mode === 'blackjack') return bjFinal.value && (h.result.net?.[s.value.me] || 0) > 0;
   return (h.result.payout?.[s.value.me] || 0) > 0 || (h.mode === 'viuda' && h.result.winners.includes(s.value.me));
 });
 watch(iWon, (won) => won && play('win'));
@@ -563,7 +644,7 @@ watch(
 </script>
 
 <template>
-  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
+  <div class="tp" :class="{ turn: (myTurn && !noChips) || viudaTurn || bjTurn, mobile: isMobile, solo: playerOnly, crowd: layout.length >= 5 }" v-if="s">
     <!-- barra superior -->
     <header class="bar">
       <button class="icon-btn" aria-label="Volver" @click="router.push(s.groupId ? `/grupos/${s.groupId}` : '/')"><Icon name="left" /></button>
@@ -573,7 +654,8 @@ watch(
           <span class="dotc" :class="{ on: connected }"></span>
           <span class="mbadge"><Icon :name="info.icon" :size="13" />{{ info.short }}</span>
           <span v-if="hand" class="hno">· #{{ hand.no }}</span>
-          <template v-if="!noChips">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
+          <template v-if="bj">· Mín. {{ formatChips(s.settings.minBet) }}</template>
+          <template v-else-if="!noChips">· {{ formatChips(Math.max(1, Math.floor(s.settings.minBet / 2))) }}/{{ formatChips(s.settings.minBet) }}</template>
         </div>
       </div>
       <button class="icon-btn" :aria-label="soundOn ? 'Silenciar sonidos' : 'Activar sonidos'" :title="soundOn ? 'Silenciar' : 'Activar sonido'" @click="soundOn = !soundOn">
@@ -636,13 +718,26 @@ watch(
             {{ paused || showResult ? statusLine : winnerText || statusLine }}
           </div>
         </Transition>
-        <ReactButtons :emojis="EMOJIS" :unread="chat.unread" :chat="!isWide" @chat="openChat" @react="react" />
+        <ReactButtons :emojis="EMOJIS" :unread="chat.unread" :chat="!isWide" :info-label="infoLabel" @chat="openChat" @react="react" @info="infoOpen = true" />
       </div>
     </section>
 
     <!-- mesa -->
-    <section v-else class="felt-zone">
-      <div class="felt">
+    <section v-else class="felt-zone" :class="{ bj }">
+      <BlackjackTable
+        v-if="bj"
+        :hand="bjView"
+        :seats="s.seats"
+        :me="s.me"
+        :chips="s.chips"
+        :final="bjFinal"
+        :status="bjStatus.text"
+        :status-kind="bjStatus.kind"
+        :turn-left="turnLeft"
+        :reactions="reactions"
+        :mobile="isMobile"
+      />
+      <div v-else class="felt">
         <div class="rail"></div>
         <div class="center">
           <Transition name="pop">
@@ -689,6 +784,7 @@ watch(
           <Icon name="mail" :size="20" />
           <Transition name="pop"><i v-if="chat.unread" class="chat-badge">{{ chat.unread > 9 ? '9+' : chat.unread }}</i></Transition>
         </button>
+        <button class="icon-btn react-btn" :aria-label="infoLabel" :title="infoLabel" @click="infoOpen = true"><Icon name="book" :size="20" /></button>
         <Transition name="pop">
           <div v-if="showReactions" class="react-pop">
             <button v-for="e in EMOJIS" :key="e" class="react-opt" @click="react(e)">{{ e }}</button>
@@ -717,8 +813,8 @@ watch(
         <span v-if="myView?.bet > 0" class="mb-bet num"><Chip :value="myView.bet" :index="0" :size="18" />{{ formatChips(myView.bet) }}</span>
         <span v-if="!auto && s.dealerId === s.me" class="mb-dealer"><Icon name="dealer" :size="13" />Dealer</span>
         <span class="grow"></span>
-        <span v-if="(myTurn || viudaTurn) && auto && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }"><Icon name="timer" :size="15" />{{ turnLeft }}s</span>
-        <ReactButtons :emojis="EMOJIS" :unread="chat.unread" up @chat="openChat" @react="react" />
+        <span v-if="(myTurn || viudaTurn || bjTurn) && auto && turnLeft" class="mb-timer num" :class="{ low: turnLeft <= 10 }"><Icon name="timer" :size="15" />{{ turnLeft }}s</span>
+        <ReactButtons :emojis="EMOJIS" :unread="chat.unread" up :info-label="infoLabel" @chat="openChat" @react="react" @info="infoOpen = true" />
       </div>
 
       <!-- enseñar tus cartas al terminar la mano -->
@@ -849,14 +945,15 @@ watch(
       </p>
 
       <!-- modo aleatorio: sin dealer, las manos salen solas -->
-      <div v-if="auto && !live && !gameOver && !revealing" class="autobar">
+      <div v-if="auto && !live && !gameOver && !revealing && !bjRevealing" class="autobar">
         <template v-if="nextHandIn">
           <div class="countdown num">{{ nextHandIn }}</div>
-          <span class="grow">Siguiente mano en {{ nextHandIn }}s</span>
+          <span class="grow">{{ bj ? 'Siguiente ronda' : 'Siguiente mano' }} en {{ nextHandIn }}s</span>
         </template>
         <template v-else>
-          <span class="grow small muted">{{ canStart ? 'Las manos se reparten solas. ¡Empezad cuando estéis!' : 'Esperando a que haya 2 jugadores conectados con fichas' }}</span>
-          <button class="btn btn-primary" :disabled="!canStart || busy" @click="run('dealer:start')"><Icon name="play" :size="16" />Repartir</button>
+          <span v-if="bj" class="grow small muted">{{ canStart ? 'Juegas contra la banca, solo o con más gente. Las rondas salen solas.' : 'Esperando a que alguien llegue a la apuesta mínima' }}</span>
+          <span v-else class="grow small muted">{{ canStart ? 'Las manos se reparten solas. ¡Empezad cuando estéis!' : 'Esperando a que haya 2 jugadores conectados con fichas' }}</span>
+          <button class="btn btn-primary" :disabled="!canStart || busy" @click="run('dealer:start')"><Icon name="play" :size="16" />{{ bj ? 'Empezar' : 'Repartir' }}</button>
         </template>
         <button v-if="manager" class="icon-btn" title="Ajustes de la mesa" @click="openMenu('settings')"><Icon name="settings" :size="18" /></button>
       </div>
@@ -878,7 +975,28 @@ watch(
         @take="run('viuda:take')"
         @act="(p) => run('viuda:act', p)"
       />
-      <div v-if="me && live && !viuda && (playerOnly || !revealed.length)" class="player">
+      <!-- blackjack: apuestas, tu turno y el resultado de la ronda -->
+      <BlackjackPanel
+        v-if="bj && bjMe && hand && (live || hand.result?.how === 'settled')"
+        class="rise"
+        :hand="bjView"
+        :me="bjMe"
+        :opts="s.bj"
+        :chips="s.chips"
+        :settings="s.settings"
+        :last="bjLast"
+        :final="bjFinal"
+        :busy="busy"
+        :compact="isMobile"
+        :turn-left="turnLeft"
+        :turn-pct="turnPct"
+        :bet-left="betLeft"
+        :bet-pct="betPct"
+        :to-act-name="toActName"
+        @bet="bjBet"
+        @act="(type) => run('bj:act', { type })"
+      />
+      <div v-if="me && live && !viuda && !bj && (playerOnly || !revealed.length)" class="player">
         <template v-if="playerOnly">
           <div v-if="!myTurn && (me.folded || myCards.length < 2)" class="physical">
             <template v-if="me.folded">Te has retirado de esta mano</template>
@@ -966,13 +1084,13 @@ watch(
           </div>
         </template>
       </div>
-      <div v-else-if="mySeat && !gameOver && !liveDealer && !(viuda && me && hand) && !(showDealerBar && !(mySeat.status === 'sitout' && !live))" class="waiting">
+      <div v-else-if="mySeat && !gameOver && !liveDealer && !(viuda && me && hand) && !(bj && bjMe && live) && !(showDealerBar && !(mySeat.status === 'sitout' && !live))" class="waiting">
         <template v-if="mySeat.status === 'sitout'">
           <span>{{ mySeat.timeouts >= 2 ? 'Te sentamos fuera por inactividad' : 'Estás fuera de la mesa' }}</span>
           <button class="btn btn-sm btn-primary" @click="run('table:sitout', { sitout: false })">Volver a jugar</button>
         </template>
-        <template v-else-if="mySeat.chips <= 0 && !noChips">
-          <span>Te quedaste sin fichas</span>
+        <template v-else-if="(bj ? mySeat.chips < s.settings.minBet : mySeat.chips <= 0) && !noChips">
+          <span>{{ mySeat.chips > 0 ? 'No te llega para la apuesta mínima' : 'Te quedaste sin fichas' }}</span>
           <button class="btn btn-sm btn-primary" :disabled="busy || !!mySeat.rebuyRequest" @click="rebuy">
             {{ mySeat.rebuyRequest ? 'Recompra pedida…' : rebuyLabel }}
           </button>
@@ -1006,10 +1124,12 @@ watch(
       @confirm="onPicked"
       @close="picker.open = false"
     />
+    <BlackjackPaysSheet v-if="bj" :open="infoOpen" @close="infoOpen = false" />
+    <HandRankingsSheet v-else :open="infoOpen" @close="infoOpen = false" />
     <ShareSheet :open="showShare" :code="s.code" invite-friends @close="showShare = false" />
     <Sheet :open="rebuyOpen" title="Recompra" :width="420" @close="rebuyOpen = false">
       <p class="muted">
-        {{ random ? 'Como se juega con dinero real, todos los demás jugadores tienen que aceptarla.' : 'La partida se pausa hasta que todos acepten y el dealer te asigne las fichas.' }}
+        {{ votedRebuy ? 'Como se juega con dinero real, todos los demás jugadores tienen que aceptarla.' : 'La partida se pausa hasta que todos acepten y el dealer te asigne las fichas.' }}
       </p>
       <div class="rb-opts">
         <button v-for="v in rebuyOptions" :key="v" class="rb-opt" :class="{ on: rebuyAmount === v }" @click="rebuyAmount = v">
@@ -1023,7 +1143,7 @@ watch(
       </label>
       <template #footer>
         <button class="btn btn-primary btn-lg btn-block" :disabled="busy || !(rebuyAmount >= s.settings.minBet)" @click="confirmRebuy">
-          <Icon name="coins" :size="18" />{{ random ? 'Pedir' : manager ? 'Recomprar' : 'Pedir' }} {{ formatChips(rebuyAmount || 0) }}
+          <Icon name="coins" :size="18" />{{ votedRebuy ? 'Pedir' : manager ? 'Recomprar' : 'Pedir' }} {{ formatChips(rebuyAmount || 0) }}
         </button>
       </template>
     </Sheet>
@@ -1133,6 +1253,7 @@ watch(
 .scanbox { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .physical { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border-radius: 14px; color: var(--text-2); font-weight: 600; font-size: 14px; background: rgba(5, 9, 28, 0.4); border: 1px solid var(--line); }
 .felt-zone { position: relative; }
+.felt-zone.bj { padding: 22px 26px 30px; place-items: stretch center; overflow-y: auto; }
 .chat-btn { position: relative; }
 .chat-badge {
   position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; font-style: normal;
@@ -1292,6 +1413,7 @@ watch(
   .tname { font-size: 16px; }
   .codebtn { padding: 0 9px; letter-spacing: 0.06em; height: 36px; }
   .felt-zone { padding: 78px 22px 14px; min-height: 300px; }
+  .felt-zone.bj { padding: 8px 12px 18px; min-height: 0; flex: none; overflow: visible; }
   .crowd .felt-zone { min-height: 380px; padding-top: 70px; }
   /* mesa llena: asientos más pequeños para que nada se monte */
   .crowd .seat-pos { transform: translate(-50%, -50%) scale(0.8); }

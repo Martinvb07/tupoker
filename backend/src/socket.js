@@ -44,7 +44,7 @@ export function initSocket(httpServer) {
           const paused = PAUSABLE.has(event) && engine.pausedBy(table);
           if (paused) throw new GameError(`Partida en pausa: recompra de ${paused.displayName} pendiente`);
           if (manage && !canManage(table, uid)) {
-            throw new GameError(['random', 'viuda'].includes(engine.modeOf(table)) ? 'Solo el anfitrión puede hacer esto' : 'Solo el dealer puede hacer esto');
+            throw new GameError(engine.isAuto(table) ? 'Solo el anfitrión puede hacer esto' : 'Solo el dealer puede hacer esto');
           }
           const result = await fn(table, payload);
           if (result !== false) commit(table);
@@ -182,7 +182,7 @@ export function initSocket(httpServer) {
       const heir = others.find((s) => s.status === 'active') || others[0];
       if (heir && t.dealerId === uid) {
         t.dealerId = heir.userId;
-        if (!['random', 'viuda'].includes(engine.modeOf(t))) notifyUser(heir.userId, 'table:notice', { message: `Ahora eres el dealer de ${t.name}` });
+        if (!engine.isAuto(t)) notifyUser(heir.userId, 'table:notice', { message: `Ahora eres el dealer de ${t.name}` });
       }
       if (heir && t.ownerId === uid) t.ownerId = heir.userId;
       engine.foldOut(t, uid);
@@ -209,8 +209,20 @@ export function initSocket(httpServer) {
       viudaTurn(t);
     });
 
+    // Blackjack: apostar en la fase de apuestas y, por turnos, pedir / plantarse / doblar / dividir
+    handle('bj:bet', (t, { bets }) => {
+      engine.bjBet(t, uid, bets);
+      const seat = mySeat(t);
+      if (seat) seat.timeouts = 0;
+    });
+    handle('bj:act', (t, { type }) => {
+      engine.bjAct(t, uid, type);
+      const seat = mySeat(t);
+      if (seat) seat.timeouts = 0;
+    });
+
     // Recompra. Se juega con dinero real, así que nadie se pone fichas solo:
-    //  - aleatorio: la tienen que aceptar todos los demás jugadores de la mesa
+    //  - aleatorio y blackjack: la tienen que aceptar todos los demás jugadores de la mesa
     //  - en vivo: la aprueba el dealer
     handle('table:rebuy', (t, { amount }) => {
       if (engine.modeOf(t) === 'live' && t.dealerId === uid) throw new GameError('En vivo el dealer no juega, solo reparte');
@@ -219,7 +231,7 @@ export function initSocket(httpServer) {
       const amt = Math.floor(Number(amount) || t.settings.startingChips);
       if (!(amt >= t.settings.minBet) || amt > t.settings.startingChips * 10) throw new GameError('Cantidad de recompra no válida');
       const others = t.seats.filter((s) => s.userId !== uid).map((s) => s.userId);
-      if (engine.modeOf(t) === 'random') {
+      if (['random', 'blackjack'].includes(engine.modeOf(t))) {
         seat.rebuyRequest = { amount: amt, at: Date.now(), needed: others, approvals: [] };
         for (const id of others) notifyUser(id, 'table:notice', { message: `${seat.displayName} pide recomprar ${amt}. Acepta o rechaza en la mesa.` });
       } else if (!others.length) engine.applyRebuy(t, uid, amt);
@@ -257,7 +269,7 @@ export function initSocket(httpServer) {
     // ---------- Gestión (dealer / anfitrión) ----------
     // En aleatorio cualquier jugador sentado puede repartir la primera mano
     handle('dealer:start', (t) => {
-      if (!canManage(t, uid) && !(['random', 'viuda'].includes(engine.modeOf(t)) && mySeat(t))) throw new GameError('Solo el dealer puede repartir');
+      if (!canManage(t, uid) && !(engine.isAuto(t) && mySeat(t))) throw new GameError('Solo el dealer puede repartir');
       engine.startHand(t);
     });
     // En vivo: la siguiente mano sale tras una cuenta atrás, para que el dealer pague antes el bote
@@ -304,7 +316,7 @@ export function initSocket(httpServer) {
     }, { manage: true });
 
     handle('dealer:chips', (t, { userId, amount, mode }) => {
-      if (engine.modeOf(t) === 'random') throw new GameError('En modo aleatorio las recompras se aprueban entre todos');
+      if (['random', 'blackjack'].includes(engine.modeOf(t))) throw new GameError('En este modo las recompras se aprueban entre todos');
       if (engine.modeOf(t) === 'viuda') throw new GameError('En la viuda no hay fichas');
       const seat = t.seats.find((s) => s.userId === userId);
       if (!seat) throw new GameError('Jugador no encontrado');

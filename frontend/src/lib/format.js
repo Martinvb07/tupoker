@@ -1,4 +1,6 @@
-export { formatChips } from '@shared/poker.js';
+import { formatChips } from '@shared/poker.js';
+
+export { formatChips };
 
 export function formatSigned(n, fmt) {
   const v = Number(n) || 0;
@@ -46,11 +48,17 @@ export const MODES = [
   { value: 'live', icon: 'hand', label: 'En vivo', short: 'En vivo', desc: 'Cartas físicas y fichas. El dealer pone el board y cada uno registra sus cartas.' },
   { value: 'random', icon: 'dice', label: 'Aleatorio', short: 'Aleatorio', desc: 'Con fichas. La app baraja y reparte las cartas y el board.' },
   { value: 'viuda', icon: 'cards', label: 'Viuda', short: 'Viuda', desc: 'Sin fichas. 5 cartas a cada uno y 5 en el centro: cambia, pasa o toca. Gana la mejor mano.' },
+  { value: 'blackjack', icon: 'club', label: 'Blackjack', short: 'Blackjack', desc: 'Cada uno contra la banca. La app reparte; apuesta a la mano y, si quieres, a Par y 21+3.' },
 ];
 // las mesas y grupos antiguos «sin dinero» juegan a la viuda
 export const normMode = (m) => (m === 'offline' ? 'viuda' : m);
 export const noChips = (m) => normMode(m) === 'viuda';
 export const modeInfo = (m) => MODES.find((x) => x.value === normMode(m)) || MODES[0];
+/** Apuestas de la mesa en corto: ciegas en el póker, mínima en el blackjack. */
+export function stakes(st) {
+  if (normMode(st.mode) === 'blackjack') return `Mín. ${formatChips(st.minBet)}`;
+  return `Ciegas ${formatChips(Math.max(1, Math.floor(st.minBet / 2)))}/${formatChips(st.minBet)}`;
+}
 
 export const CHIP_COLORS = [
   { base: '#f59e0b', edge: '#fde68a', text: '#fff' },

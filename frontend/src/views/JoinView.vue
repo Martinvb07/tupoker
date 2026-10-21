@@ -71,11 +71,12 @@ async function join() {
       <div class="facts">
         <div class="wide"><span>Modo</span><b class="row" style="gap: 6px"><Icon :name="mode.icon" :size="16" />{{ mode.label }}</b><small class="muted">{{ mode.desc }}</small></div>
         <template v-if="!noChips(table.settings.mode)">
-          <div><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
+          <div v-if="table.settings.mode === 'blackjack'"><span>Apuesta mínima</span><b class="num">{{ formatChips(table.settings.minBet) }}</b></div>
+          <div v-else><span>Ciegas</span><b class="num">{{ formatChips(Math.max(1, Math.floor(table.settings.minBet / 2))) }} / {{ formatChips(table.settings.minBet) }}</b></div>
           <div><span>Máxima</span><b class="num">{{ table.settings.maxBet ? formatChips(table.settings.maxBet) : 'Sin límite' }}</b></div>
           <div><span>Fichas iniciales</span><b class="num">{{ formatChips(table.settings.startingChips) }}</b></div>
         </template>
-        <div v-if="table.dealer"><span>Dealer</span><b class="row" style="gap: 6px"><Avatar :user="table.dealer" :size="22" />{{ table.dealer.displayName }}</b></div>
+        <div v-if="table.dealer && table.settings.mode !== 'blackjack'"><span>Dealer</span><b class="row" style="gap: 6px"><Avatar :user="table.dealer" :size="22" />{{ table.dealer.displayName }}</b></div>
       </div>
 
       <div class="chips">

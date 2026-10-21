@@ -1,5 +1,6 @@
 <script setup>
-// Botones de chat y reacciones en línea (barra del jugador en vivo y barra de tu asiento en móvil).
+// Botones de chat, manos de póker (o pagos del blackjack) y reacciones en línea
+// (barra del jugador en vivo y barra de tu asiento en móvil).
 import { ref } from 'vue';
 import Icon from './Icon.vue';
 
@@ -8,8 +9,9 @@ defineProps({
   unread: { type: Number, default: 0 },
   chat: { type: Boolean, default: true }, // en PC el chat ya está fijo a la derecha
   up: Boolean, // el menú de emojis se abre hacia arriba
+  infoLabel: { type: String, default: 'Manos de póker' },
 });
-const emit = defineEmits(['chat', 'react']);
+const emit = defineEmits(['chat', 'react', 'info']);
 const open = ref(false);
 function pick(e) {
   open.value = false;
@@ -22,6 +24,9 @@ function pick(e) {
     <button v-if="chat" class="icon-btn rb chat-btn" aria-label="Abrir chat" @click="emit('chat')">
       <Icon name="mail" :size="19" />
       <Transition name="pop"><i v-if="unread" class="chat-badge">{{ unread > 9 ? '9+' : unread }}</i></Transition>
+    </button>
+    <button class="icon-btn rb" :aria-label="infoLabel" :title="infoLabel" @click="emit('info')">
+      <Icon name="book" :size="19" />
     </button>
     <button class="icon-btn rb" :class="{ on: open }" aria-label="Enviar reacción" @click="open = !open">
       <Icon :name="open ? 'x' : 'smile'" :size="19" />
